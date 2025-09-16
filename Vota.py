@@ -71,7 +71,7 @@ eleicoes['Ativa'] = eleicoes['Ativa'].astype(str).str.upper()
 active_elections = eleicoes[eleicoes['Ativa'] == "TRUE"]
 
 # --- Streamlit UI ---
-st.title("🗳️ Sistema de Votação CREA (Supabase)")
+st.title("🗳️ Sistema de Votação Senge-PR (Supabase)")
 
 # --- Entrada do eleitor ---
 st.subheader("Identificação do Eleitor")
@@ -149,7 +149,7 @@ else:
     st.info("Preencha seu nome e número do CREA para continuar.")
 
 # --- Resultados ---
-st.title("🏆 Resultados das Eleições CREA")
+st.title("🏆 Resultados das Eleições Senge-PR")
 for idx, row in active_elections.iterrows():
     eleicao_id = row['ID']
     votos_eleicao = votos[votos['Eleicao_ID']==eleicao_id]
