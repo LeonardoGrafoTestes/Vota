@@ -3,8 +3,8 @@ import hashlib, secrets
 import psycopg2
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-import pandas as pd
 import os
+import pandas as pd
 
 # --- Carregar variáveis do .env ---
 load_dotenv()
@@ -40,24 +40,24 @@ except Exception as e:
 def carregar_eleicoes():
     cur.execute("SELECT ID, Nome, Ativa FROM Eleicoes;")
     rows = cur.fetchall()
-    return pd.DataFrame(rows, columns=['ID','Nome','Ativa'])
+    return pd.DataFrame(rows, columns=["ID","Nome","Ativa"])
 
 def carregar_candidatos():
     cur.execute("SELECT Eleicao_ID, Nome FROM Candidatos;")
     rows = cur.fetchall()
-    return pd.DataFrame(rows, columns=['Eleicao_ID','Nome'])
+    return pd.DataFrame(rows, columns=["Eleicao_ID","Nome"])
 
 def carregar_votos():
     cur.execute("SELECT Nome, CREA, Token_Hash, DataHora, Eleicao_ID FROM Votos;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=['Nome','CREA','Token_Hash','DataHora','Eleicao_ID'])
+    df = pd.DataFrame(rows, columns=["Nome","CREA","Token_Hash","DataHora","Eleicao_ID"])
     df['DataHora'] = pd.to_datetime(df['DataHora'], errors='coerce')
     return df
 
 def carregar_eleitores():
-    cur.execute("SELECT DataHora, Eleicao_ID, Candidato, Token_Hash, Vote_Hash FROM Eleitores;")
+    cur.execute("SELECT DataHora, Eleicao_ID, Token_Hash, Vote_Hash FROM Eleitores;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=['DataHora','Eleicao_ID','Candidato','Token_Hash','Vote_Hash'])
+    df = pd.DataFrame(rows, columns=["DataHora","Eleicao_ID","Token_Hash","Vote_Hash"])
     df['DataHora'] = pd.to_datetime(df['DataHora'], errors='coerce')
     return df
 
@@ -67,7 +67,7 @@ candidatos = carregar_candidatos()
 votos = carregar_votos()
 eleitores = carregar_eleitores()
 
-eleicoes['Ativa'] = eleicoes['Ativa'].astype(str).str.strip().str.upper()
+eleicoes['Ativa'] = eleicoes['Ativa'].astype(str).str.upper()
 active_elections = eleicoes[eleicoes['Ativa'] == "TRUE"]
 
 # --- Streamlit UI ---
@@ -81,10 +81,10 @@ crea = st.text_input("Número do CREA")
 if nome and crea:
     # --- Eleições pendentes ---
     eleicoes_pendentes = []
-    for _, e in active_elections.iterrows():
-        eleicao_id = e['ID']
-        if not ((votos['CREA']==crea) & (votos['Eleicao_ID']==eleicao_id)).any():
-            eleicoes_pendentes.append(e)
+    for idx, row in active_elections.iterrows():
+        eleicao_id = row['ID']
+        if not ((votos['CREA'] == crea) & (votos['Eleicao_ID'] == eleicao_id)).any():
+            eleicoes_pendentes.append(row)
 
     total_eleicoes = len(active_elections)
     votadas = total_eleicoes - len(eleicoes_pendentes)
@@ -94,6 +94,7 @@ if nome and crea:
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
     if eleicoes_pendentes:
+        # Próxima eleição
         eleicao = eleicoes_pendentes[0]
         eleicao_id = eleicao['ID']
         st.info(f"Próxima eleição: **{eleicao['Nome']}**")
@@ -103,6 +104,8 @@ if nome and crea:
             if st.button("Gerar Token"):
                 token = secrets.token_urlsafe(16)
                 token_hash = sha256(token)
+
+                # Registrar token no banco
                 try:
                     cur.execute(
                         "INSERT INTO Votos (Nome, CREA, Token_Hash, DataHora, Eleicao_ID) VALUES (%s,%s,%s,%s,%s)",
@@ -119,11 +122,13 @@ if nome and crea:
         if "token" in st.session_state:
             st.subheader("Registrar voto")
             candidatos_eleicao = candidatos[candidatos['Eleicao_ID']==eleicao_id]['Nome'].tolist()
+
             if candidatos_eleicao:
                 candidato = st.radio("Escolha seu candidato:", candidatos_eleicao)
                 if st.button("Confirmar Voto"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
+
                     try:
                         cur.execute(
                             "INSERT INTO Eleitores (DataHora, Eleicao_ID, Token_Hash, Vote_Hash) VALUES (%s,%s,%s,%s)",
@@ -145,10 +150,11 @@ else:
 
 # --- Resultados ---
 st.title("🏆 Resultados das Eleições CREA")
-for _, e in active_elections.iterrows():
-    eleicao_id = e['ID']
+for idx, row in active_elections.iterrows():
+    eleicao_id = row['ID']
     votos_eleicao = votos[votos['Eleicao_ID']==eleicao_id]
-    st.subheader(f"{e['Nome']}")
+
+    st.subheader(f"{row['Nome']}")
     total_votos = len(votos_eleicao)
     st.write(f"Total de votos registrados: {total_votos}")
 
@@ -156,13 +162,16 @@ for _, e in active_elections.iterrows():
         first_vote_time = votos_eleicao['DataHora'].min()
         prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
         agora = datetime.utcnow()
+
         if agora >= prazo_liberacao:
             st.success("Resultados liberados:")
             contagem = votos_eleicao.groupby('Candidato').size().reset_index(name='Votos')
             st.table(contagem)
         else:
-            st.info(f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
-                    f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}")
+            st.info(
+                f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
+                f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}"
+            )
     else:
         st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
 
