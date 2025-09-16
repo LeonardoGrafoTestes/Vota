@@ -3,8 +3,8 @@ import hashlib, secrets
 import psycopg2
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-import os
 import pandas as pd
+import os
 
 # --- Carregar variáveis do .env ---
 load_dotenv()
@@ -36,26 +36,30 @@ except Exception as e:
     st.error(f"Erro ao conectar ao Supabase: {e}")
     st.stop()
 
-# --- Funções para carregar dados do banco ---
+# --- Funções para carregar dados ---
 def carregar_eleicoes():
     cur.execute("SELECT ID, Nome, Ativa FROM Eleicoes;")
     rows = cur.fetchall()
-    return [{"ID": r[0], "Nome": r[1], "Ativa": str(r[2]).upper()} for r in rows]
+    return pd.DataFrame(rows, columns=['ID','Nome','Ativa'])
 
 def carregar_candidatos():
     cur.execute("SELECT Eleicao_ID, Nome FROM Candidatos;")
     rows = cur.fetchall()
-    return [{"Eleicao_ID": r[0], "Nome": r[1]} for r in rows]
+    return pd.DataFrame(rows, columns=['Eleicao_ID','Nome'])
 
 def carregar_votos():
     cur.execute("SELECT Nome, CREA, Token_Hash, DataHora, Eleicao_ID FROM Votos;")
     rows = cur.fetchall()
-    return [{"Nome": r[0], "CREA": r[1], "Token_Hash": r[2], "DataHora": r[3], "Eleicao_ID": r[4]} for r in rows]
+    df = pd.DataFrame(rows, columns=['Nome','CREA','Token_Hash','DataHora','Eleicao_ID'])
+    df['DataHora'] = pd.to_datetime(df['DataHora'], errors='coerce')
+    return df
 
 def carregar_eleitores():
-    cur.execute("SELECT DataHora, Eleicao_ID, Token_Hash, Vote_Hash FROM Eleitores;")
+    cur.execute("SELECT DataHora, Eleicao_ID, Candidato, Token_Hash, Vote_Hash FROM Eleitores;")
     rows = cur.fetchall()
-    return [{"DataHora": r[0], "Eleicao_ID": r[1], "Token_Hash": r[2], "Vote_Hash": r[3]} for r in rows]
+    df = pd.DataFrame(rows, columns=['DataHora','Eleicao_ID','Candidato','Token_Hash','Vote_Hash'])
+    df['DataHora'] = pd.to_datetime(df['DataHora'], errors='coerce')
+    return df
 
 # --- Carregar dados ---
 eleicoes = carregar_eleicoes()
@@ -63,10 +67,11 @@ candidatos = carregar_candidatos()
 votos = carregar_votos()
 eleitores = carregar_eleitores()
 
-active_elections = [e for e in eleicoes if e['Ativa'] == "TRUE"]
+eleicoes['Ativa'] = eleicoes['Ativa'].astype(str).str.strip().str.upper()
+active_elections = eleicoes[eleicoes['Ativa'] == "TRUE"]
 
 # --- Streamlit UI ---
-st.title("🗳️ Sistema de Votação Senge-PR (Supabase)")
+st.title("🗳️ Sistema de Votação CREA (Supabase)")
 
 # --- Entrada do eleitor ---
 st.subheader("Identificação do Eleitor")
@@ -76,9 +81,9 @@ crea = st.text_input("Número do CREA")
 if nome and crea:
     # --- Eleições pendentes ---
     eleicoes_pendentes = []
-    for e in active_elections:
+    for _, e in active_elections.iterrows():
         eleicao_id = e['ID']
-        if not any(v['CREA']==crea and v['Eleicao_ID']==eleicao_id for v in votos):
+        if not ((votos['CREA']==crea) & (votos['Eleicao_ID']==eleicao_id)).any():
             eleicoes_pendentes.append(e)
 
     total_eleicoes = len(active_elections)
@@ -89,7 +94,6 @@ if nome and crea:
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
     if eleicoes_pendentes:
-        # Próxima eleição
         eleicao = eleicoes_pendentes[0]
         eleicao_id = eleicao['ID']
         st.info(f"Próxima eleição: **{eleicao['Nome']}**")
@@ -99,8 +103,6 @@ if nome and crea:
             if st.button("Gerar Token"):
                 token = secrets.token_urlsafe(16)
                 token_hash = sha256(token)
-
-                # Registrar token no banco
                 try:
                     cur.execute(
                         "INSERT INTO Votos (Nome, CREA, Token_Hash, DataHora, Eleicao_ID) VALUES (%s,%s,%s,%s,%s)",
@@ -116,14 +118,12 @@ if nome and crea:
         # --- Registrar voto ---
         if "token" in st.session_state:
             st.subheader("Registrar voto")
-            candidatos_eleicao = [c['Nome'] for c in candidatos if c['Eleicao_ID']==eleicao_id]
-
+            candidatos_eleicao = candidatos[candidatos['Eleicao_ID']==eleicao_id]['Nome'].tolist()
             if candidatos_eleicao:
                 candidato = st.radio("Escolha seu candidato:", candidatos_eleicao)
                 if st.button("Confirmar Voto"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
-
                     try:
                         cur.execute(
                             "INSERT INTO Eleitores (DataHora, Eleicao_ID, Token_Hash, Vote_Hash) VALUES (%s,%s,%s,%s)",
@@ -133,8 +133,7 @@ if nome and crea:
                         st.success(f"✅ Voto registrado com sucesso para **{eleicao['Nome']}**!")
                         st.write("Hash do seu voto (anonimizado):", vote_hash)
                         del st.session_state["token"]
-                        st.experimental_set_query_params()  # apenas limpa para a próxima eleição
-                        st.experimental_rerun()  # opcional: funciona no Streamlit >=1.22
+                        st.experimental_rerun()
                     except Exception as e:
                         st.error(f"Erro ao registrar voto: {e}")
             else:
@@ -145,37 +144,28 @@ else:
     st.info("Preencha seu nome e número do CREA para continuar.")
 
 # --- Resultados ---
-st.title("🏆 Resultados das Eleições Senge-PR")
-df_votos = pd.DataFrame(eleitores)
-if not df_votos.empty:
-    df_votos['DataHora'] = pd.to_datetime(df_votos['DataHora'], errors='coerce')
-
-for e in active_elections:
+st.title("🏆 Resultados das Eleições CREA")
+for _, e in active_elections.iterrows():
     eleicao_id = e['ID']
-    votos_eleicao = df_votos[df_votos['Eleicao_ID']==eleicao_id] if not df_votos.empty else pd.DataFrame()
-
+    votos_eleicao = votos[votos['Eleicao_ID']==eleicao_id]
     st.subheader(f"{e['Nome']}")
     total_votos = len(votos_eleicao)
     st.write(f"Total de votos registrados: {total_votos}")
 
-    if total_votos >= MIN_VOTOS and not votos_eleicao.empty:
+    if total_votos >= MIN_VOTOS:
         first_vote_time = votos_eleicao['DataHora'].min()
         prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
         agora = datetime.utcnow()
-
         if agora >= prazo_liberacao:
             st.success("Resultados liberados:")
-            contagem = votos_eleicao['Vote_Hash'].value_counts().reset_index()
-            contagem.columns = ['Voto (hash)', 'Contagem']
+            contagem = votos_eleicao.groupby('Candidato').size().reset_index(name='Votos')
             st.table(contagem)
         else:
-            st.info(
-                f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
-                f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}"
-            )
+            st.info(f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
+                    f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}")
     else:
         st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
 
 # --- Auditoria opcional ---
 if st.checkbox("🔎 Ver auditoria de votos"):
-    st.dataframe(df_votos)
+    st.dataframe(votos)
