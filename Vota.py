@@ -36,7 +36,7 @@ except Exception as e:
     st.error(f"Erro ao conectar ao Supabase: {e}")
     st.stop()
 
-# --- Funções para carregar dados ---
+# --- Funções para carregar dados do banco ---
 def carregar_eleicoes():
     cur.execute("SELECT ID, Nome, Ativa FROM Eleicoes;")
     rows = cur.fetchall()
@@ -66,7 +66,7 @@ eleitores = carregar_eleitores()
 active_elections = [e for e in eleicoes if e['Ativa'] == "TRUE"]
 
 # --- Streamlit UI ---
-st.title("🗳️ Sistema de Votação CREA (Supabase)")
+st.title("🗳️ Sistema de Votação Senge-PR (Supabase)")
 
 # --- Entrada do eleitor ---
 st.subheader("Identificação do Eleitor")
@@ -75,8 +75,11 @@ crea = st.text_input("Número do CREA")
 
 if nome and crea:
     # --- Eleições pendentes ---
-    eleicoes_pendentes = [e for e in active_elections
-                          if not any(v['CREA']==crea and v['Eleicao_ID']==e['ID'] for v in votos)]
+    eleicoes_pendentes = []
+    for e in active_elections:
+        eleicao_id = e['ID']
+        if not any(v['CREA']==crea and v['Eleicao_ID']==eleicao_id for v in votos):
+            eleicoes_pendentes.append(e)
 
     total_eleicoes = len(active_elections)
     votadas = total_eleicoes - len(eleicoes_pendentes)
@@ -130,7 +133,8 @@ if nome and crea:
                         st.success(f"✅ Voto registrado com sucesso para **{eleicao['Nome']}**!")
                         st.write("Hash do seu voto (anonimizado):", vote_hash)
                         del st.session_state["token"]
-                        st.info("Atualize a página para votar na próxima eleição.")
+                        st.experimental_set_query_params()  # apenas limpa para a próxima eleição
+                        st.experimental_rerun()  # opcional: funciona no Streamlit >=1.22
                     except Exception as e:
                         st.error(f"Erro ao registrar voto: {e}")
             else:
@@ -141,37 +145,36 @@ else:
     st.info("Preencha seu nome e número do CREA para continuar.")
 
 # --- Resultados ---
-st.title("🏆 Resultados das Eleições CREA")
-if active_elections:
-    df_votos = pd.DataFrame(votos)
-    for e in active_elections:
-        eleicao_id = e['ID']
-        votos_eleicao = df_votos[df_votos['Eleicao_ID']==eleicao_id] if not df_votos.empty else pd.DataFrame()
+st.title("🏆 Resultados das Eleições Senge-PR")
+df_votos = pd.DataFrame(eleitores)
+if not df_votos.empty:
+    df_votos['DataHora'] = pd.to_datetime(df_votos['DataHora'], errors='coerce')
 
-        st.subheader(f"{e['Nome']}")
-        total_votos = len(votos_eleicao)
-        st.write(f"Total de votos registrados: {total_votos}")
+for e in active_elections:
+    eleicao_id = e['ID']
+    votos_eleicao = df_votos[df_votos['Eleicao_ID']==eleicao_id] if not df_votos.empty else pd.DataFrame()
 
-        if total_votos >= MIN_VOTOS:
-            if not votos_eleicao.empty:
-                votos_eleicao['DataHora'] = pd.to_datetime(votos_eleicao['DataHora'], errors='coerce')
-                first_vote_time = votos_eleicao['DataHora'].min()
-                prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
-                agora = datetime.utcnow()
+    st.subheader(f"{e['Nome']}")
+    total_votos = len(votos_eleicao)
+    st.write(f"Total de votos registrados: {total_votos}")
 
-                if agora >= prazo_liberacao:
-                    st.success("Resultados liberados:")
-                    contagem = votos_eleicao['Token_Hash'].value_counts().reset_index()
-                    contagem.columns = ['Candidato', 'Votos']
-                    # Observação: o voto está anonimamente registrado, você pode criar contagem por candidato se armazenar hash vinculado a candidato separadamente
-                    st.table(contagem)
-                else:
-                    st.info(
-                        f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
-                        f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}"
-                    )
+    if total_votos >= MIN_VOTOS and not votos_eleicao.empty:
+        first_vote_time = votos_eleicao['DataHora'].min()
+        prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
+        agora = datetime.utcnow()
+
+        if agora >= prazo_liberacao:
+            st.success("Resultados liberados:")
+            contagem = votos_eleicao['Vote_Hash'].value_counts().reset_index()
+            contagem.columns = ['Voto (hash)', 'Contagem']
+            st.table(contagem)
         else:
-            st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
+            st.info(
+                f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
+                f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}"
+            )
+    else:
+        st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
 
 # --- Auditoria opcional ---
 if st.checkbox("🔎 Ver auditoria de votos"):
