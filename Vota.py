@@ -4,6 +4,7 @@ import psycopg2
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import os
+import pandas as pd
 
 # --- Carregar variáveis do .env ---
 load_dotenv()
@@ -35,7 +36,7 @@ except Exception as e:
     st.error(f"Erro ao conectar ao Supabase: {e}")
     st.stop()
 
-# --- Funções para carregar dados do banco ---
+# --- Funções para carregar dados ---
 def carregar_eleicoes():
     cur.execute("SELECT ID, Nome, Ativa FROM Eleicoes;")
     rows = cur.fetchall()
@@ -74,11 +75,8 @@ crea = st.text_input("Número do CREA")
 
 if nome and crea:
     # --- Eleições pendentes ---
-    eleicoes_pendentes = []
-    for e in active_elections:
-        eleicao_id = e['ID']
-        if not any(v['CREA']==crea and v['Eleicao_ID']==eleicao_id for v in votos):
-            eleicoes_pendentes.append(e)
+    eleicoes_pendentes = [e for e in active_elections
+                          if not any(v['CREA']==crea and v['Eleicao_ID']==e['ID'] for v in votos)]
 
     total_eleicoes = len(active_elections)
     votadas = total_eleicoes - len(eleicoes_pendentes)
@@ -93,11 +91,8 @@ if nome and crea:
         eleicao_id = eleicao['ID']
         st.info(f"Próxima eleição: **{eleicao['Nome']}**")
 
-        # Chave do token específica para a eleição
-        token_key = f"token_{eleicao_id}"
-
         # --- Gerar token ---
-        if token_key not in st.session_state:
+        if "token" not in st.session_state:
             if st.button("Gerar Token"):
                 token = secrets.token_urlsafe(16)
                 token_hash = sha256(token)
@@ -109,21 +104,21 @@ if nome and crea:
                         (nome, crea, token_hash, datetime.utcnow(), eleicao_id)
                     )
                     conn.commit()
-                    st.session_state[token_key] = token
+                    st.session_state["token"] = token
                     st.success("✅ Seu token foi gerado (guarde com segurança):")
                     st.code(token)
                 except Exception as e:
                     st.error(f"Erro ao registrar token: {e}")
 
         # --- Registrar voto ---
-        if token_key in st.session_state:
+        if "token" in st.session_state:
             st.subheader("Registrar voto")
             candidatos_eleicao = [c['Nome'] for c in candidatos if c['Eleicao_ID']==eleicao_id]
 
             if candidatos_eleicao:
                 candidato = st.radio("Escolha seu candidato:", candidatos_eleicao)
                 if st.button("Confirmar Voto"):
-                    token_h = sha256(st.session_state[token_key])
+                    token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
 
                     try:
@@ -134,9 +129,8 @@ if nome and crea:
                         conn.commit()
                         st.success(f"✅ Voto registrado com sucesso para **{eleicao['Nome']}**!")
                         st.write("Hash do seu voto (anonimizado):", vote_hash)
-
-                        # Limpar token da eleição atual para liberar próxima
-                        st.session_state.pop(token_key, None)
+                        del st.session_state["token"]
+                        st.info("Atualize a página para votar na próxima eleição.")
                     except Exception as e:
                         st.error(f"Erro ao registrar voto: {e}")
             else:
@@ -148,34 +142,37 @@ else:
 
 # --- Resultados ---
 st.title("🏆 Resultados das Eleições CREA")
-for e in active_elections:
-    eleicao_id = e['ID']
-    votos_eleicao = [v for v in votos if v['Eleicao_ID']==eleicao_id]
+if active_elections:
+    df_votos = pd.DataFrame(votos)
+    for e in active_elections:
+        eleicao_id = e['ID']
+        votos_eleicao = df_votos[df_votos['Eleicao_ID']==eleicao_id] if not df_votos.empty else pd.DataFrame()
 
-    st.subheader(f"{e['Nome']}")
-    total_votos = len(votos_eleicao)
-    st.write(f"Total de votos registrados: {total_votos}")
+        st.subheader(f"{e['Nome']}")
+        total_votos = len(votos_eleicao)
+        st.write(f"Total de votos registrados: {total_votos}")
 
-    if total_votos >= MIN_VOTOS:
-        first_vote_time = min(datetime.fromisoformat(v['DataHora']) for v in votos_eleicao)
-        prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
-        agora = datetime.utcnow()
+        if total_votos >= MIN_VOTOS:
+            if not votos_eleicao.empty:
+                votos_eleicao['DataHora'] = pd.to_datetime(votos_eleicao['DataHora'], errors='coerce')
+                first_vote_time = votos_eleicao['DataHora'].min()
+                prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
+                agora = datetime.utcnow()
 
-        if agora >= prazo_liberacao:
-            st.success("Resultados liberados:")
-            contagem = {}
-            for v in votos_eleicao:
-                # Aqui só usamos Vote_Hash para contagem, mantendo segredo
-                contagem[v['Vote_Hash']] = contagem.get(v['Vote_Hash'], 0) + 1
-            st.write("Votos contabilizados anonimamente:", len(contagem))
+                if agora >= prazo_liberacao:
+                    st.success("Resultados liberados:")
+                    contagem = votos_eleicao['Token_Hash'].value_counts().reset_index()
+                    contagem.columns = ['Candidato', 'Votos']
+                    # Observação: o voto está anonimamente registrado, você pode criar contagem por candidato se armazenar hash vinculado a candidato separadamente
+                    st.table(contagem)
+                else:
+                    st.info(
+                        f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
+                        f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}"
+                    )
         else:
-            st.info(
-                f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
-                f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}"
-            )
-    else:
-        st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
+            st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
 
 # --- Auditoria opcional ---
 if st.checkbox("🔎 Ver auditoria de votos"):
-    st.dataframe(votos)
+    st.dataframe(df_votos)
