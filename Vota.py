@@ -97,6 +97,7 @@ if nome and crea:
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
+    # --- Fluxo de votação sequencial obrigatório ---
     if eleicoes_pendentes and st.session_state["eleicao_idx"] < len(eleicoes_pendentes):
         eleicao = eleicoes_pendentes[st.session_state["eleicao_idx"]]
         eleicao_id = eleicao['id']
@@ -161,8 +162,17 @@ if nome and crea:
                         st.error(f"Erro ao registrar voto: {e}")
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
+
     else:
         st.success("✅ Você já votou em todas as eleições ativas!")
+
+    # --- Auditoria só liberada se não houver eleições pendentes ---
+    if len(eleicoes_pendentes) == 0:
+        if st.checkbox("🔎 Ver auditoria de votos"):
+            st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
+    else:
+        st.info(f"🔒 Complete todas as eleições para liberar a auditoria. Restam {len(eleicoes_pendentes)} eleição(ões).")
+
 else:
     st.info("Preencha seu nome e número do CREA para continuar.")
 
@@ -192,7 +202,3 @@ for idx, row in active_elections.iterrows():
             )
     else:
         st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
-
-# --- Auditoria opcional ---
-if st.checkbox("🔎 Ver auditoria de votos"):
-    st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
