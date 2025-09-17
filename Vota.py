@@ -86,7 +86,12 @@ if "logged_in" not in st.session_state:
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
             st.session_state["eleicao_idx"] = 0
-            st.success("Login realizado com sucesso!")
+            st.session_state["rerun_login"] = True
+
+# --- Rerun seguro após login ---
+if st.session_state.get("rerun_login"):
+    st.session_state["rerun_login"] = False
+    st.rerun()
 
 # --- Fluxo de votação ---
 if st.session_state.get("logged_in"):
@@ -97,11 +102,12 @@ if st.session_state.get("logged_in"):
 
     # --- Função para atualizar eleições pendentes ---
     def atualizar_eleicoes_pendentes():
-        votos_df = carregar_votos()
+        global votos
+        votos = carregar_votos()
         eleicoes_pendentes = []
         for idx, row in active_elections.iterrows():
             eleicao_id = row['id']
-            if not ((votos_df['crea'] == crea) & (votos_df['eleicao_id'] == eleicao_id)).any():
+            if not ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
                 eleicoes_pendentes.append(row)
         return eleicoes_pendentes
 
@@ -136,7 +142,6 @@ if st.session_state.get("logged_in"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
                     try:
-                        # Inserir voto no banco
                         cur.execute(
                             "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
                             (nome, crea, eleicao_id, token_h, datetime.utcnow())
@@ -150,13 +155,13 @@ if st.session_state.get("logged_in"):
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # Atualizar eleições pendentes
                         eleicoes_pendentes = atualizar_eleicoes_pendentes()
 
-                        # Avançar para próxima eleição
-                        if st.session_state["eleicao_idx"] + 1 < len(eleicoes_pendentes):
+                        # Botão para próxima eleição
+                        if len(eleicoes_pendentes) > 1:
                             if st.button("Ir para próxima eleição"):
                                 st.session_state["eleicao_idx"] += 1
+                                st.session_state["rerun_next"] = True
                         else:
                             st.success("✅ Você já votou em todas as eleições ativas!")
 
@@ -167,6 +172,11 @@ if st.session_state.get("logged_in"):
                         st.error(f"Erro ao registrar voto: {e}")
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
+
+# --- Rerun seguro após botão próxima eleição ---
+if st.session_state.get("rerun_next"):
+    st.session_state["rerun_next"] = False
+    st.rerun()
 
 # --- Auditoria liberada somente após concluir todas as eleições ---
 if st.session_state.get("logged_in") and len(atualizar_eleicoes_pendentes()) == 0:
