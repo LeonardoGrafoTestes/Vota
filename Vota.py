@@ -86,18 +86,12 @@ if "logged_in" not in st.session_state:
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
             st.session_state["eleicao_idx"] = 0
-            st.session_state["rerun_login"] = True
-
-# --- Rerun seguro após login ---
-if st.session_state.get("rerun_login"):
-    st.session_state["rerun_login"] = False
-    st.experimental_rerun()
+            st.experimental_rerun()  # chamado dentro do clique do botão
 
 # --- Fluxo de votação ---
 if st.session_state.get("logged_in"):
     nome = st.session_state["nome"]
     crea = st.session_state["crea"]
-
     st.info(f"Eleitor: **{nome}** | CREA: **{crea}**")
 
     # --- Função para atualizar eleições pendentes ---
@@ -135,14 +129,13 @@ if st.session_state.get("logged_in"):
         if "token" in st.session_state:
             st.subheader("Registrar voto")
             candidatos_eleicao = candidatos[candidatos['eleicao_id']==eleicao_id]['nome'].tolist()
-
             if candidatos_eleicao:
                 candidato = st.radio("Escolha seu candidato:", candidatos_eleicao)
                 if st.button("Confirmar Voto"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
                     try:
-                        # Inserir voto no banco somente agora
+                        # Inserir voto no banco
                         cur.execute(
                             "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
                             (nome, crea, eleicao_id, token_h, datetime.utcnow())
@@ -156,7 +149,7 @@ if st.session_state.get("logged_in"):
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # --- Atualizar eleições pendentes e DataFrames ---
+                        # Atualizar eleições pendentes
                         eleicoes_pendentes = atualizar_eleicoes_pendentes()
 
                         # Botão para próxima eleição
@@ -185,7 +178,6 @@ st.title("🏆 Resultados das Eleições Senge-PR")
 for idx, row in active_elections.iterrows():
     eleicao_id = row['id']
     votos_eleicao = eleitores[eleitores['eleicao_id']==eleicao_id]
-
     st.subheader(f"{row['nome']}")
     total_votos = len(votos_eleicao)
     st.write(f"Total de votos registrados: {total_votos}")
@@ -194,7 +186,6 @@ for idx, row in active_elections.iterrows():
         first_vote_time = votos_eleicao['datahora'].min()
         prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
         agora = datetime.utcnow()
-
         if agora >= prazo_liberacao:
             st.success("Resultados liberados:")
             contagem = votos_eleicao.groupby('candidato').size().reset_index(name='Votos')
