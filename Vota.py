@@ -48,17 +48,16 @@ def carregar_candidatos():
     return pd.DataFrame(rows, columns=["Eleicao_ID","Nome"])
 
 def carregar_votos():
-    cur.execute("SELECT Nome, CREA, Token_Hash, DataHora, Eleicao_ID FROM Votos;")
+    cur.execute("SELECT Eleicao_ID, Token_Hash, candidato, Vote_Hash, DataHora FROM Eleitores;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["Nome","CREA","Token_Hash","DataHora","Eleicao_ID"])
+    df = pd.DataFrame(rows, columns=["Eleicao_ID","Token_Hash","candidato","Vote_Hash","DataHora"])
     df['DataHora'] = pd.to_datetime(df['DataHora'], errors='coerce')
     return df
 
 def carregar_eleitores():
-    cur.execute("SELECT DataHora, Eleicao_ID, Token_Hash, Vote_Hash FROM Eleitores;")
+    cur.execute("SELECT Nome, CREA, Eleicao_ID, Token_Hash FROM Eleitores;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["DataHora","Eleicao_ID","Token_Hash","Vote_Hash"])
-    df['DataHora'] = pd.to_datetime(df['DataHora'], errors='coerce')
+    df = pd.DataFrame(rows, columns=["Nome","CREA","Eleicao_ID","Token_Hash"])
     return df
 
 # --- Carregar dados ---
@@ -71,7 +70,7 @@ eleicoes['Ativa'] = eleicoes['Ativa'].astype(str).str.upper()
 active_elections = eleicoes[eleicoes['Ativa'] == "TRUE"]
 
 # --- Streamlit UI ---
-st.title("🗳️ Sistema de Votação Senge-PR (Supabase)")
+st.title("🗳️ Sistema de Votação Anônima CREA")
 
 # --- Entrada do eleitor ---
 st.subheader("Identificação do Eleitor")
@@ -83,7 +82,8 @@ if nome and crea:
     eleicoes_pendentes = []
     for idx, row in active_elections.iterrows():
         eleicao_id = row['ID']
-        if not ((votos['CREA'] == crea) & (votos['Eleicao_ID'] == eleicao_id)).any():
+        # Verifica se já existe token ativo para o eleitor
+        if not ((eleitores['CREA'] == crea) & (eleitores['Eleicao_ID'] == eleicao_id)).any():
             eleicoes_pendentes.append(row)
 
     total_eleicoes = len(active_elections)
@@ -105,16 +105,18 @@ if nome and crea:
                 token = secrets.token_urlsafe(16)
                 token_hash = sha256(token)
 
-                # Registrar token no banco
+                # Registrar token no banco (sem gravar Nome/CREA no voto)
                 try:
                     cur.execute(
-                        "INSERT INTO Votos (Nome, CREA, Token_Hash, DataHora, Eleicao_ID) VALUES (%s,%s,%s,%s,%s)",
-                        (nome, crea, token_hash, datetime.utcnow(), eleicao_id)
+                        "INSERT INTO Eleitores (Nome, CREA, Eleicao_ID, Token_Hash) VALUES (%s,%s,%s,%s)",
+                        (nome, crea, eleicao_id, token_hash)
                     )
                     conn.commit()
                     st.session_state["token"] = token
                     st.success("✅ Seu token foi gerado (guarde com segurança):")
                     st.code(token)
+                    # Recarrega eleitores
+                    eleitores = carregar_eleitores()
                 except Exception as e:
                     st.error(f"Erro ao registrar token: {e}")
 
@@ -131,14 +133,16 @@ if nome and crea:
 
                     try:
                         cur.execute(
-                            "INSERT INTO Eleitores (DataHora, Eleicao_ID, Token_Hash, Vote_Hash) VALUES (%s,%s,%s,%s)",
-                            (datetime.utcnow(), eleicao_id, token_h, vote_hash)
+                            "INSERT INTO Eleitores (Eleicao_ID, Token_Hash, candidato, Vote_Hash, DataHora) VALUES (%s,%s,%s,%s,%s)",
+                            (eleicao_id, token_h, candidato, vote_hash, datetime.utcnow())
                         )
                         conn.commit()
-                        st.success(f"✅ Voto registrado com sucesso para **{eleicao['Nome']}**!")
-                        st.write("Hash do seu voto (anonimizado):", vote_hash)
+                        st.success(f"✅ Voto registrado com sucesso para **{candidato}**!")
+                        st.info("O token foi descartado após o voto.")
+                        # Limpar token
                         del st.session_state["token"]
-                        st.experimental_rerun()
+                        # Atualiza DataFrame votos
+                        votos = carregar_votos()
                     except Exception as e:
                         st.error(f"Erro ao registrar voto: {e}")
             else:
@@ -149,7 +153,7 @@ else:
     st.info("Preencha seu nome e número do CREA para continuar.")
 
 # --- Resultados ---
-st.title("🏆 Resultados das Eleições Senge-PR")
+st.title("🏆 Resultados das Eleições")
 for idx, row in active_elections.iterrows():
     eleicao_id = row['ID']
     votos_eleicao = votos[votos['Eleicao_ID']==eleicao_id]
@@ -165,7 +169,7 @@ for idx, row in active_elections.iterrows():
 
         if agora >= prazo_liberacao:
             st.success("Resultados liberados:")
-            contagem = votos_eleicao.groupby('Candidato').size().reset_index(name='Votos')
+            contagem = votos_eleicao.groupby('candidato').size().reset_index(name='Votos')
             st.table(contagem)
         else:
             st.info(
