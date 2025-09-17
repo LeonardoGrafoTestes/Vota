@@ -73,43 +73,48 @@ active_elections = eleicoes[eleicoes['ativa'] == "TRUE"]
 # --- Streamlit UI ---
 st.title("🗳 Sistema de Votação Senge-PR")
 
-# --- Login inicial seguro ---
+# --- Login inicial ---
 if "logged_in" not in st.session_state:
     st.subheader("Login do Eleitor")
     nome_input = st.text_input("Nome completo")
     crea_input = st.text_input("Número do CREA")
     if st.button("Entrar"):
-        if not nome_input.strip() or not crea_input.strip():
+        if nome_input.strip() == "" or crea_input.strip() == "":
             st.error("Preencha ambos os campos para continuar.")
         else:
-            st.session_state.update({
-                "nome": nome_input.strip(),
-                "crea": crea_input.strip(),
-                "logged_in": True,
-                "eleicao_idx": 0
-            })
-            st.experimental_rerun()  # recarrega após login
+            st.session_state["nome"] = nome_input.strip()
+            st.session_state["crea"] = crea_input.strip()
+            st.session_state["logged_in"] = True
+            st.session_state["eleicao_idx"] = 0
+            st.session_state["rerun_login"] = True
+
+# --- Rerun seguro após login ---
+if st.session_state.get("rerun_login"):
+    st.session_state["rerun_login"] = False
+    st.rerun()
 
 # --- Fluxo de votação ---
 if st.session_state.get("logged_in"):
     nome = st.session_state["nome"]
     crea = st.session_state["crea"]
+
     st.info(f"Eleitor: **{nome}** | CREA: **{crea}**")
 
-    # --- Função para eleições pendentes ---
+    # --- Função para atualizar eleições pendentes ---
     def atualizar_eleicoes_pendentes():
         global votos
         votos = carregar_votos()
-        pendentes = []
+        eleicoes_pendentes = []
         for idx, row in active_elections.iterrows():
             eleicao_id = row['id']
             if not ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
-                pendentes.append(row)
-        return pendentes
+                eleicoes_pendentes.append(row)
+        return eleicoes_pendentes
 
     eleicoes_pendentes = atualizar_eleicoes_pendentes()
     total_eleicoes = len(active_elections)
     votadas = total_eleicoes - len(eleicoes_pendentes)
+
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
@@ -119,7 +124,7 @@ if st.session_state.get("logged_in"):
         eleicao_id = eleicao['id']
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
-        # --- Gerar token ---
+        # --- Gerar token apenas em memória ---
         if "token" not in st.session_state:
             if st.button("Gerar Token"):
                 st.session_state["token"] = secrets.token_urlsafe(16)
@@ -130,13 +135,13 @@ if st.session_state.get("logged_in"):
         if "token" in st.session_state:
             st.subheader("Registrar voto")
             candidatos_eleicao = candidatos[candidatos['eleicao_id']==eleicao_id]['nome'].tolist()
+
             if candidatos_eleicao:
                 candidato = st.radio("Escolha seu candidato:", candidatos_eleicao)
                 if st.button("Confirmar Voto"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
                     try:
-                        # Inserir voto
                         cur.execute(
                             "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
                             (nome, crea, eleicao_id, token_h, datetime.utcnow())
@@ -147,18 +152,16 @@ if st.session_state.get("logged_in"):
                         )
                         conn.commit()
                         st.success(f"✅ Voto registrado com sucesso para **{candidato}**!")
+                        st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # Atualizar pendentes e DataFrames
                         eleicoes_pendentes = atualizar_eleicoes_pendentes()
-                        votos = carregar_votos()
-                        eleitores = carregar_eleitores()
 
-                        # Botão para próxima eleição, se houver mais
-                        if len(eleicoes_pendentes) > 0:
+                        # Botão para próxima eleição
+                        if len(eleicoes_pendentes) > 1:
                             if st.button("Ir para próxima eleição"):
                                 st.session_state["eleicao_idx"] += 1
-                                st.experimental_rerun()
+                                st.session_state["rerun_next"] = True
                         else:
                             st.success("✅ Você já votou em todas as eleições ativas!")
 
@@ -170,7 +173,12 @@ if st.session_state.get("logged_in"):
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
 
-# --- Auditoria liberada somente após votar em todas as eleições ---
+# --- Rerun seguro após botão próxima eleição ---
+if st.session_state.get("rerun_next"):
+    st.session_state["rerun_next"] = False
+    st.rerun()
+
+# --- Auditoria liberada somente após concluir todas as eleições ---
 if st.session_state.get("logged_in") and len(atualizar_eleicoes_pendentes()) == 0:
     if st.checkbox("🔎 Ver auditoria de votos"):
         st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
@@ -189,6 +197,7 @@ for idx, row in active_elections.iterrows():
         first_vote_time = votos_eleicao['datahora'].min()
         prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
         agora = datetime.utcnow()
+
         if agora >= prazo_liberacao:
             st.success("Resultados liberados:")
             contagem = votos_eleicao.groupby('candidato').size().reset_index(name='Votos')
