@@ -1,7 +1,9 @@
 streamlit
+psycopg2
 psycopg2-binary
 python-dotenv
 pandas
 gspread
 oauth2client
 google-auth
+
