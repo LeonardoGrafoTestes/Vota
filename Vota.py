@@ -67,8 +67,8 @@ candidatos = carregar_candidatos()
 votos = carregar_votos()
 eleitores = carregar_eleitores()
 
-eleicoes['ativa'] = eleicoes['ativa'].astype(str).str.upper()
-active_elections = eleicoes[eleicoes['ativa'] == "TRUE"]
+# Usar booleano diretamente (sem conversão para string)
+active_elections = eleicoes[eleicoes['ativa'] == True]
 
 # --- Streamlit UI ---
 st.title("🗳 Sistema de Votação Senge-PR")
@@ -122,9 +122,9 @@ if st.session_state.get("logged_in"):
         st.session_state["eleicao_atual"] = eleicoes_pendentes[0]['id']
 
     # --- Pega eleição atual (se ainda existir nas pendentes) ---
-    eleicao = next((e for e in eleicoes_pendentes if e['id'] == st.session_state.get("eleicao_atual")), None)
+    eleicao = next((row for row in eleicoes_pendentes if row['id'] == st.session_state.get("eleicao_atual")), None)
 
-    if eleicao:
+    if eleicao is not None:
         eleicao_id = eleicao['id']
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
