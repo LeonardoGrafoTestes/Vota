@@ -107,7 +107,6 @@ if st.session_state.get("logged_in"):
         eleicoes_pendentes = []
         for idx, row in active_elections.iterrows():
             eleicao_id = row['id']
-            # só considera como já votado se existir no banco
             ja_votou = ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any()
             if not ja_votou:
                 eleicoes_pendentes.append(row)
@@ -139,41 +138,50 @@ if st.session_state.get("logged_in"):
             candidatos_eleicao = candidatos[candidatos['eleicao_id']==eleicao_id]['nome'].tolist()
 
             if candidatos_eleicao:
-                candidato = st.radio("Escolha seu candidato:", candidatos_eleicao)
+                # guarda escolha no session_state
+                st.radio(
+                    "Escolha seu candidato:",
+                    candidatos_eleicao,
+                    key=f"candidato_{eleicao_id}"
+                )
+
                 if st.button("Confirmar Voto"):
-                    token_h = sha256(st.session_state["token"])
-                    vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
-                    try:
-                        cur.execute(
-                            "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
-                            (nome, crea, eleicao_id, token_h, datetime.utcnow())
-                        )
-                        cur.execute(
-                            "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
-                            (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
-                        )
-                        conn.commit()
-                        st.success(f"✅ Voto registrado com sucesso para **{candidato}**!")
-                        st.info("O token foi descartado após o voto.")
-                        del st.session_state["token"]
+                    candidato_escolhido = st.session_state.get(f"candidato_{eleicao_id}")
+                    if not candidato_escolhido:
+                        st.error("Selecione um candidato antes de confirmar.")
+                    else:
+                        token_h = sha256(st.session_state["token"])
+                        vote_hash = sha256(token_h + candidato_escolhido + secrets.token_hex(8))
+                        try:
+                            cur.execute(
+                                "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
+                                (nome, crea, eleicao_id, token_h, datetime.utcnow())
+                            )
+                            cur.execute(
+                                "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
+                                (datetime.utcnow(), eleicao_id, candidato_escolhido, token_h, vote_hash)
+                            )
+                            conn.commit()
+                            st.success(f"✅ Voto registrado com sucesso para **{candidato_escolhido}**!")
+                            st.info("O token foi descartado após o voto.")
+                            del st.session_state["token"]
+                            del st.session_state[f"candidato_{eleicao_id}"]
 
-                        # Atualiza eleições
-                        eleicoes_pendentes = atualizar_eleicoes_pendentes()
+                            eleicoes_pendentes = atualizar_eleicoes_pendentes()
 
-                        # Botão para próxima eleição
-                        if len(eleicoes_pendentes) > 0:
-                            if st.button("Ir para próxima eleição"):
-                                st.session_state["eleicao_idx"] += 1
-                                st.session_state["rerun_next"] = True
-                        else:
-                            st.success("✅ Você já votou em todas as eleições ativas!")
+                            if len(eleicoes_pendentes) > 0:
+                                if st.button("Ir para próxima eleição"):
+                                    st.session_state["eleicao_idx"] += 1
+                                    st.session_state["rerun_next"] = True
+                            else:
+                                st.success("✅ Você já votou em todas as eleições ativas!")
 
-                    except psycopg2.IntegrityError:
-                        conn.rollback()
-                        st.error("Você já votou nesta eleição!")
-                    except Exception as e:
-                        conn.rollback()
-                        st.error(f"Erro ao registrar voto: {e}")
+                        except psycopg2.IntegrityError:
+                            conn.rollback()
+                            st.error("Você já votou nesta eleição!")
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"Erro ao registrar voto: {e}")
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
 
