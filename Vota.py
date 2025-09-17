@@ -85,7 +85,6 @@ if "logged_in" not in st.session_state:
             st.session_state["nome"] = nome_input.strip()
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
-            st.session_state["eleicao_idx"] = 0
             st.session_state["rerun_login"] = True
 
 # --- Rerun seguro após login ---
@@ -118,9 +117,14 @@ if st.session_state.get("logged_in"):
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
-    # --- Próxima eleição ---
-    if eleicoes_pendentes and st.session_state["eleicao_idx"] < len(eleicoes_pendentes):
-        eleicao = eleicoes_pendentes[st.session_state["eleicao_idx"]]
+    # --- Se não tiver eleição atual, define a primeira pendente ---
+    if "eleicao_atual" not in st.session_state and eleicoes_pendentes:
+        st.session_state["eleicao_atual"] = eleicoes_pendentes[0]['id']
+
+    # --- Pega eleição atual (se ainda existir nas pendentes) ---
+    eleicao = next((e for e in eleicoes_pendentes if e['id'] == st.session_state.get("eleicao_atual")), None)
+
+    if eleicao:
         eleicao_id = eleicao['id']
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
@@ -156,12 +160,9 @@ if st.session_state.get("logged_in"):
                         del st.session_state["token"]
 
                         eleicoes_pendentes = atualizar_eleicoes_pendentes()
-
-                        # Botão para próxima eleição
-                        if len(eleicoes_pendentes) > 1:
-                            if st.button("Ir para próxima eleição"):
-                                st.session_state["eleicao_idx"] += 1
-                                st.session_state["rerun_next"] = True
+                        if eleicoes_pendentes:
+                            st.session_state["eleicao_atual"] = eleicoes_pendentes[0]['id']
+                            st.rerun()
                         else:
                             st.success("✅ Você já votou em todas as eleições ativas!")
 
@@ -172,11 +173,8 @@ if st.session_state.get("logged_in"):
                         st.error(f"Erro ao registrar voto: {e}")
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
-
-# --- Rerun seguro após botão próxima eleição ---
-if st.session_state.get("rerun_next"):
-    st.session_state["rerun_next"] = False
-    st.rerun()
+    else:
+        st.success("✅ Você já votou em todas as eleições ativas!")
 
 # --- Auditoria liberada somente após concluir todas as eleições ---
 if st.session_state.get("logged_in") and len(atualizar_eleicoes_pendentes()) == 0:
