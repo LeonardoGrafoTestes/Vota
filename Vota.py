@@ -67,8 +67,8 @@ candidatos = carregar_candidatos()
 votos = carregar_votos()
 eleitores = carregar_eleitores()
 
-# Usar booleano diretamente (sem conversão para string)
-active_elections = eleicoes[eleicoes['ativa'] == True]
+eleicoes['ativa'] = eleicoes['ativa'].astype(str).str.upper()
+active_elections = eleicoes[eleicoes['ativa'] == "TRUE"]
 
 # --- Streamlit UI ---
 st.title("🗳 Sistema de Votação Senge-PR")
@@ -85,6 +85,7 @@ if "logged_in" not in st.session_state:
             st.session_state["nome"] = nome_input.strip()
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
+            st.session_state["eleicao_idx"] = 0
             st.session_state["rerun_login"] = True
 
 # --- Rerun seguro após login ---
@@ -106,7 +107,9 @@ if st.session_state.get("logged_in"):
         eleicoes_pendentes = []
         for idx, row in active_elections.iterrows():
             eleicao_id = row['id']
-            if not ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
+            # só considera como já votado se existir no banco
+            ja_votou = ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any()
+            if not ja_votou:
                 eleicoes_pendentes.append(row)
         return eleicoes_pendentes
 
@@ -117,14 +120,9 @@ if st.session_state.get("logged_in"):
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
-    # --- Se não tiver eleição atual, define a primeira pendente ---
-    if "eleicao_atual" not in st.session_state and eleicoes_pendentes:
-        st.session_state["eleicao_atual"] = eleicoes_pendentes[0]['id']
-
-    # --- Pega eleição atual (se ainda existir nas pendentes) ---
-    eleicao = next((row for row in eleicoes_pendentes if row['id'] == st.session_state.get("eleicao_atual")), None)
-
-    if eleicao is not None:
+    # --- Próxima eleição ---
+    if eleicoes_pendentes and st.session_state["eleicao_idx"] < len(eleicoes_pendentes):
+        eleicao = eleicoes_pendentes[st.session_state["eleicao_idx"]]
         eleicao_id = eleicao['id']
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
@@ -159,10 +157,14 @@ if st.session_state.get("logged_in"):
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
+                        # Atualiza eleições
                         eleicoes_pendentes = atualizar_eleicoes_pendentes()
-                        if eleicoes_pendentes:
-                            st.session_state["eleicao_atual"] = eleicoes_pendentes[0]['id']
-                            st.rerun()
+
+                        # Botão para próxima eleição
+                        if len(eleicoes_pendentes) > 0:
+                            if st.button("Ir para próxima eleição"):
+                                st.session_state["eleicao_idx"] += 1
+                                st.session_state["rerun_next"] = True
                         else:
                             st.success("✅ Você já votou em todas as eleições ativas!")
 
@@ -170,11 +172,15 @@ if st.session_state.get("logged_in"):
                         conn.rollback()
                         st.error("Você já votou nesta eleição!")
                     except Exception as e:
+                        conn.rollback()
                         st.error(f"Erro ao registrar voto: {e}")
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
-    else:
-        st.success("✅ Você já votou em todas as eleições ativas!")
+
+# --- Rerun seguro após botão próxima eleição ---
+if st.session_state.get("rerun_next"):
+    st.session_state["rerun_next"] = False
+    st.rerun()
 
 # --- Auditoria liberada somente após concluir todas as eleições ---
 if st.session_state.get("logged_in") and len(atualizar_eleicoes_pendentes()) == 0:
