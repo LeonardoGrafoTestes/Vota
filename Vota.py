@@ -83,12 +83,11 @@ if nome and crea:
     if "eleicao_idx" not in st.session_state:
         st.session_state["eleicao_idx"] = 0
 
-    # --- Lista de eleições pendentes ---
+    # --- Lista de eleições pendentes (controle por CREA e por eleição) ---
     eleicoes_pendentes = []
     for idx, row in active_elections.iterrows():
         eleicao_id = row['id']
-        token_check = sha256(crea + str(eleicao_id))
-        if not ((votos['token_hash'] == token_check) & (votos['eleicao_id'] == eleicao_id)).any():
+        if not ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
             eleicoes_pendentes.append(row)
 
     total_eleicoes = len(active_elections)
