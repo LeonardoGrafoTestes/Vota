@@ -107,7 +107,6 @@ if nome and crea:
             if st.button("Gerar Token"):
                 token = secrets.token_urlsafe(16)
                 token_hash = sha256(token)
-
                 try:
                     cur.execute(
                         "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
@@ -121,6 +120,7 @@ if nome and crea:
                 except psycopg2.IntegrityError:
                     conn.rollback()
                     st.error("Você já votou nesta eleição!")
+
         # --- Registrar voto ---
         if "token" in st.session_state:
             st.subheader("Registrar voto")
@@ -146,9 +146,17 @@ if nome and crea:
                         votos = carregar_votos()
                         eleitores = carregar_eleitores()
 
-                        # Avançar automaticamente para a próxima eleição
-                        st.session_state["eleicao_idx"] += 1
+                        # --- Botão "Próxima eleição" se houver mais de uma eleição pendente ---
+                        if len(eleicoes_pendentes) > 1:
+                            if st.button("Ir para próxima eleição"):
+                                st.session_state["eleicao_idx"] += 1
+                                st.experimental_rerun()
+                        else:
+                            st.success("✅ Você já votou em todas as eleições ativas!")
 
+                    except psycopg2.IntegrityError:
+                        conn.rollback()
+                        st.error("Você já votou nesta eleição!")
                     except Exception as e:
                         st.error(f"Erro ao registrar voto: {e}")
             else:
