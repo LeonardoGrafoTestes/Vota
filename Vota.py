@@ -119,26 +119,12 @@ if st.session_state.get("logged_in"):
         eleicao_id = eleicao['id']
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
-        # --- Gerar token ---
+        # --- Gerar token apenas em memória ---
         if "token" not in st.session_state:
             if st.button("Gerar Token"):
-                token = secrets.token_urlsafe(16)
-                token_hash = sha256(token)
-                try:
-                    cur.execute(
-                        "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
-                        (nome, crea, eleicao_id, token_hash, datetime.utcnow())
-                    )
-                    conn.commit()
-                    st.session_state["token"] = token
-                    st.success("✅ Seu token foi gerado (guarde com segurança):")
-                    st.code(token)
-                    votos = carregar_votos()
-                except psycopg2.IntegrityError:
-                    conn.rollback()
-                    st.error("Você já votou nesta eleição!")
-                except Exception as e:
-                    st.error(f"Erro ao gerar token: {e}")
+                st.session_state["token"] = secrets.token_urlsafe(16)
+                st.success("Token gerado. Confirme seu voto para registrar.")
+                st.code(st.session_state["token"])
 
         # --- Registrar voto ---
         if "token" in st.session_state:
@@ -151,6 +137,11 @@ if st.session_state.get("logged_in"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
                     try:
+                        # Inserir voto no banco somente agora
+                        cur.execute(
+                            "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
+                            (nome, crea, eleicao_id, token_h, datetime.utcnow())
+                        )
                         cur.execute(
                             "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
                             (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
