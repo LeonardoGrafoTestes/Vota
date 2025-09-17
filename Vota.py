@@ -48,9 +48,9 @@ def carregar_candidatos():
     return pd.DataFrame(rows, columns=["eleicao_id", "nome"])
 
 def carregar_votos():
-    cur.execute("SELECT id, eleicao_id, token_hash, datahora FROM votos;")
+    cur.execute("SELECT id, eleicao_id, token_hash, datahora, crea FROM votos;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["id","eleicao_id","token_hash","datahora"])
+    df = pd.DataFrame(rows, columns=["id","eleicao_id","token_hash","datahora","crea"])
     df['datahora'] = pd.to_datetime(df['datahora'], errors='coerce')
     return df
 
@@ -108,25 +108,19 @@ if nome and crea:
                 token = secrets.token_urlsafe(16)
                 token_hash = sha256(token)
 
-                # Checa se já existe token para este CREA na eleição
-                cur.execute("SELECT COUNT(*) FROM votos WHERE eleicao_id=%s AND token_hash=%s;",
-                            (eleicao_id, sha256(crea + str(eleicao_id))))
-                if cur.fetchone()[0] > 0:
-                    st.error("Você já possui um token ativo para esta eleição.")
-                else:
-                    try:
-                        cur.execute(
-                            "INSERT INTO votos (eleicao_id, token_hash, datahora) VALUES (%s,%s,%s)",
-                            (eleicao_id, token_hash, datetime.utcnow())
-                        )
-                        conn.commit()
-                        st.session_state["token"] = token
-                        st.success("✅ Seu token foi gerado (guarde com segurança):")
-                        st.code(token)
-                        votos = carregar_votos()  # atualizar votos
-                    except Exception as e:
-                        st.error(f"Erro ao registrar token: {e}")
-
+                try:
+                    cur.execute(
+                        "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
+                        (nome, crea, eleicao_id, token_hash, datetime.utcnow())
+                    )
+                    conn.commit()
+                    st.session_state["token"] = token
+                    st.success("✅ Seu token foi gerado (guarde com segurança):")
+                    st.code(token)
+                    votos = carregar_votos()  # atualizar votos
+                except psycopg2.IntegrityError:
+                    conn.rollback()
+                    st.error("Você já votou nesta eleição!")
         # --- Registrar voto ---
         if "token" in st.session_state:
             st.subheader("Registrar voto")
@@ -152,7 +146,7 @@ if nome and crea:
                         votos = carregar_votos()
                         eleitores = carregar_eleitores()
 
-                        # Avançar para a próxima eleição
+                        # Avançar automaticamente para a próxima eleição
                         st.session_state["eleicao_idx"] += 1
 
                     except Exception as e:
