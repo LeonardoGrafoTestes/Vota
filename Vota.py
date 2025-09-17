@@ -93,7 +93,6 @@ if nome and crea:
         pendentes = []
         for idx, row in active_elections.iterrows():
             eleicao_id = row['id']
-            # verifica se já votou nesta eleição pelo CREA
             cur.execute(
                 "SELECT 1 FROM votos WHERE eleicao_id=%s AND nome=%s AND crea=%s",
                 (eleicao_id, nome, crea)
@@ -158,11 +157,12 @@ if nome and crea:
                         if st.session_state["eleicao_index"] + 1 < len(st.session_state["eleicoes_pendentes"]):
                             st.session_state["eleicao_index"] += 1
                         else:
+                            st.session_state["eleicoes_pendentes"] = []
                             st.success("✅ Você já votou em todas as eleições ativas!")
                         # recarrega votos e eleitores
                         votos = carregar_votos()
                         eleitores = carregar_eleitores()
-                        st.experimental_rerun()  # Aqui só recarrega a página
+                        st.experimental_rerun_flag = True
                     except Exception as e:
                         st.error(f"Erro ao registrar voto: {e}")
             else:
