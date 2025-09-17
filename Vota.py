@@ -40,35 +40,34 @@ except Exception as e:
 def carregar_eleicoes():
     cur.execute("SELECT id, nome, ativa FROM eleicoes;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["ID", "Nome", "Ativa"])
-    df['Ativa'] = df['Ativa'].astype(str).str.upper()
-    return df
+    return pd.DataFrame(rows, columns=["ID","Nome","Ativa"])
 
 def carregar_candidatos():
-    cur.execute("SELECT eleicao_id, nome FROM candidatos;")
+    cur.execute("SELECT id, eleicao_id, nome FROM candidatos;")
     rows = cur.fetchall()
-    return pd.DataFrame(rows, columns=["Eleicao_ID", "Nome"])
+    return pd.DataFrame(rows, columns=["ID","Eleicao_ID","Nome"])
 
 def carregar_votos():
-    cur.execute("SELECT eleicao_id, token_hash, vote_hash, datahora FROM votos;")
+    cur.execute("SELECT id, eleicao_id, token_hash, datahora FROM votos;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["Eleicao_ID", "Token_Hash", "Vote_Hash", "DataHora"])
+    df = pd.DataFrame(rows, columns=["ID","Eleicao_ID","Token_Hash","DataHora"])
     df['DataHora'] = pd.to_datetime(df['DataHora'], errors='coerce')
     return df
 
 def carregar_eleitores():
     cur.execute("SELECT id, datahora, eleicao_id, candidato, token_hash, vote_hash FROM eleitores;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["ID", "DataHora", "Eleicao_ID", "Candidato", "Token_Hash", "Vote_Hash"])
+    df = pd.DataFrame(rows, columns=["ID","DataHora","Eleicao_ID","Candidato","Token_Hash","Vote_Hash"])
     df['DataHora'] = pd.to_datetime(df['DataHora'], errors='coerce')
     return df
 
-# --- Carregar dados iniciais ---
+# --- Carregar dados ---
 eleicoes = carregar_eleicoes()
 candidatos = carregar_candidatos()
 votos = carregar_votos()
 eleitores = carregar_eleitores()
 
+eleicoes['Ativa'] = eleicoes['Ativa'].astype(str).str.upper()
 active_elections = eleicoes[eleicoes['Ativa'] == "TRUE"]
 
 # --- Streamlit UI ---
@@ -83,28 +82,24 @@ if nome and crea:
     # --- Eleições pendentes ---
     eleicoes_pendentes = []
     for idx, row in active_elections.iterrows():
-        eleicao_id = int(row['ID'])
-        # verifica se já existe voto ou token ativo para esse CREA
-        cur.execute(
-            "SELECT 1 FROM votos WHERE eleicao_id=%s AND token_hash IN "
-            "(SELECT token_hash FROM votos v JOIN eleitores e ON v.token_hash=e.token_hash WHERE e.vote_hash IS NULL) AND EXISTS "
-            "(SELECT 1 FROM votos WHERE token_hash=v.token_hash AND EXISTS "
-            "(SELECT 1 FROM votos WHERE token_hash=v.token_hash))",
-            (eleicao_id,)
-        )
-        # Simplificando: apenas checar se já votou no DataFrame
-        if not ((votos['Eleicao_ID'] == eleicao_id) & (eleitores['Vote_Hash'].notnull())).any():
+        eleicao_id = row['ID']
+        # Verifica se já existe token ativo para este CREA
+        cur.execute("SELECT 1 FROM votos WHERE token_hash IN (SELECT token_hash FROM votos) AND eleicao_id=%s AND id IN (SELECT id FROM votos WHERE nome=%s AND crea=%s);", (eleicao_id, nome, crea))
+        token_existe = cur.fetchone()
+        if not ((votos['Eleicao_ID'] == eleicao_id) & (votos['Token_Hash'].isin(eleitores['Token_Hash']))).any():
             eleicoes_pendentes.append(row)
 
     total_eleicoes = len(active_elections)
     votadas = total_eleicoes - len(eleicoes_pendentes)
 
+    # Barra de progresso
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
     if eleicoes_pendentes:
+        # Próxima eleição
         eleicao = eleicoes_pendentes[0]
-        eleicao_id = int(eleicao['ID'])
+        eleicao_id = eleicao['ID']
         st.info(f"Próxima eleição: **{eleicao['Nome']}**")
 
         # --- Gerar token ---
@@ -113,17 +108,16 @@ if nome and crea:
                 token = secrets.token_urlsafe(16)
                 token_hash = sha256(token)
 
-                # Registrar token no banco (anônimo)
                 try:
                     cur.execute(
-                        "INSERT INTO votos (eleicao_id, token_hash, datahora) VALUES (%s, %s, %s)",
+                        "INSERT INTO votos (eleicao_id, token_hash, datahora) VALUES (%s,%s,%s)",
                         (eleicao_id, token_hash, datetime.utcnow())
                     )
                     conn.commit()
                     st.session_state["token"] = token
-                    st.success("✅ Seu token foi gerado (guarde com segurança):")
+                    st.success("✅ Seu token foi gerado (guarde com segurança). Ele será descartado após o voto:")
                     st.code(token)
-                    votos = carregar_votos()  # recarrega votos
+                    votos = carregar_votos()  # Atualiza DataFrame após inserção
                 except Exception as e:
                     st.error(f"Erro ao registrar token: {e}")
 
@@ -140,15 +134,15 @@ if nome and crea:
 
                     try:
                         cur.execute(
-                            "INSERT INTO eleitores (eleicao_id, candidato, token_hash, vote_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
-                            (eleicao_id, candidato, token_h, vote_hash, datetime.utcnow())
+                            "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
+                            (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
                         )
                         conn.commit()
                         st.success(f"✅ Voto registrado com sucesso para **{candidato}**!")
-                        st.info("O token foi descartado após o voto.")
+                        st.write("Hash do voto (anonimizado):", vote_hash)
                         del st.session_state["token"]
-                        votos = carregar_votos()       # Atualiza votos
-                        eleitores = carregar_eleitores()  # Atualiza eleitores
+                        votos = carregar_votos()
+                        eleitores = carregar_eleitores()
                         st.experimental_rerun()
                     except Exception as e:
                         st.error(f"Erro ao registrar voto: {e}")
@@ -162,7 +156,7 @@ else:
 # --- Resultados ---
 st.title("🏆 Resultados das Eleições Senge-PR")
 for idx, row in active_elections.iterrows():
-    eleicao_id = int(row['ID'])
+    eleicao_id = row['ID']
     votos_eleicao = eleitores[eleitores['Eleicao_ID']==eleicao_id]
 
     st.subheader(f"{row['Nome']}")
