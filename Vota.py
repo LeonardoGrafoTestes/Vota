@@ -71,7 +71,7 @@ eleicoes['ativa'] = eleicoes['ativa'].astype(str).str.upper()
 active_elections = eleicoes[eleicoes['ativa'] == "TRUE"]
 
 # --- Streamlit UI ---
-st.title("🗳️ Sistema de Votação Senge-PR (Supabase)")
+st.title("🗳️ Sistema de Votação Senge-PR")
 
 # --- Login inicial ---
 if "logged_in" not in st.session_state:
@@ -86,8 +86,15 @@ if "logged_in" not in st.session_state:
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
             st.session_state["eleicao_idx"] = 0
-            st.experimental_rerun()
-else:
+            st.session_state["rerun_login"] = True
+
+# --- Rerun seguro após login ---
+if st.session_state.get("rerun_login"):
+    st.session_state["rerun_login"] = False
+    st.rerun()
+
+# --- Fluxo de votação ---
+if st.session_state.get("logged_in"):
     nome = st.session_state["nome"]
     crea = st.session_state["crea"]
 
@@ -106,7 +113,7 @@ else:
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
-    # --- Fluxo de votação ---
+    # --- Próxima eleição ---
     if eleicoes_pendentes and st.session_state["eleicao_idx"] < len(eleicoes_pendentes):
         eleicao = eleicoes_pendentes[st.session_state["eleicao_idx"]]
         eleicao_id = eleicao['id']
@@ -160,7 +167,7 @@ else:
                         if len(eleicoes_pendentes) > 1:
                             if st.button("Ir para próxima eleição"):
                                 st.session_state["eleicao_idx"] += 1
-                                st.experimental_rerun()
+                                st.session_state["rerun_next"] = True
                         else:
                             st.success("✅ Você já votou em todas as eleições ativas!")
 
@@ -172,15 +179,15 @@ else:
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
 
-    else:
-        st.success("✅ Você já votou em todas as eleições ativas!")
+# --- Rerun seguro após botão próxima eleição ---
+if st.session_state.get("rerun_next"):
+    st.session_state["rerun_next"] = False
+    st.rerun()
 
-    # --- Auditoria liberada somente após concluir todas as eleições ---
-    if len(eleicoes_pendentes) == 0:
-        if st.checkbox("🔎 Ver auditoria de votos"):
-            st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
-    else:
-        st.info(f"🔒 Complete todas as eleições para liberar a auditoria. Restam {len(eleicoes_pendentes)} eleição(ões).")
+# --- Auditoria liberada somente após concluir todas as eleições ---
+if st.session_state.get("logged_in") and len(eleicoes_pendentes) == 0:
+    if st.checkbox("🔎 Ver auditoria de votos"):
+        st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
 
 # --- Resultados ---
 st.title("🏆 Resultados das Eleições Senge-PR")
