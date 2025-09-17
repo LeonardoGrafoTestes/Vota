@@ -73,17 +73,27 @@ active_elections = eleicoes[eleicoes['ativa'] == "TRUE"]
 # --- Streamlit UI ---
 st.title("🗳️ Sistema de Votação Senge-PR (Supabase)")
 
-# --- Entrada do eleitor ---
-st.subheader("Identificação do Eleitor")
-nome = st.text_input("Nome completo")
-crea = st.text_input("Número do CREA")
+# --- Login inicial ---
+if "logged_in" not in st.session_state:
+    st.subheader("Login do Eleitor")
+    nome_input = st.text_input("Nome completo")
+    crea_input = st.text_input("Número do CREA")
+    if st.button("Entrar"):
+        if nome_input.strip() == "" or crea_input.strip() == "":
+            st.error("Preencha ambos os campos para continuar.")
+        else:
+            st.session_state["nome"] = nome_input.strip()
+            st.session_state["crea"] = crea_input.strip()
+            st.session_state["logged_in"] = True
+            st.session_state["eleicao_idx"] = 0
+            st.experimental_rerun()
+else:
+    nome = st.session_state["nome"]
+    crea = st.session_state["crea"]
 
-if nome and crea:
-    # --- Inicializar índice da eleição atual ---
-    if "eleicao_idx" not in st.session_state:
-        st.session_state["eleicao_idx"] = 0
+    st.info(f"Eleitor: **{nome}** | CREA: **{crea}**")
 
-    # --- Lista de eleições pendentes (controle por CREA e por eleição) ---
+    # --- Lista de eleições pendentes ---
     eleicoes_pendentes = []
     for idx, row in active_elections.iterrows():
         eleicao_id = row['id']
@@ -96,7 +106,7 @@ if nome and crea:
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
-    # --- Fluxo de votação sequencial obrigatório ---
+    # --- Fluxo de votação ---
     if eleicoes_pendentes and st.session_state["eleicao_idx"] < len(eleicoes_pendentes):
         eleicao = eleicoes_pendentes[st.session_state["eleicao_idx"]]
         eleicao_id = eleicao['id']
@@ -116,10 +126,12 @@ if nome and crea:
                     st.session_state["token"] = token
                     st.success("✅ Seu token foi gerado (guarde com segurança):")
                     st.code(token)
-                    votos = carregar_votos()  # atualizar votos
+                    votos = carregar_votos()
                 except psycopg2.IntegrityError:
                     conn.rollback()
                     st.error("Você já votou nesta eleição!")
+                except Exception as e:
+                    st.error(f"Erro ao gerar token: {e}")
 
         # --- Registrar voto ---
         if "token" in st.session_state:
@@ -131,7 +143,6 @@ if nome and crea:
                 if st.button("Confirmar Voto"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
-
                     try:
                         cur.execute(
                             "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
@@ -142,11 +153,10 @@ if nome and crea:
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # Atualizar DataFrames
                         votos = carregar_votos()
                         eleitores = carregar_eleitores()
 
-                        # --- Botão "Próxima eleição" se houver mais de uma eleição pendente ---
+                        # Botão para próxima eleição
                         if len(eleicoes_pendentes) > 1:
                             if st.button("Ir para próxima eleição"):
                                 st.session_state["eleicao_idx"] += 1
@@ -165,15 +175,12 @@ if nome and crea:
     else:
         st.success("✅ Você já votou em todas as eleições ativas!")
 
-    # --- Auditoria só liberada se não houver eleições pendentes ---
+    # --- Auditoria liberada somente após concluir todas as eleições ---
     if len(eleicoes_pendentes) == 0:
         if st.checkbox("🔎 Ver auditoria de votos"):
             st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
     else:
         st.info(f"🔒 Complete todas as eleições para liberar a auditoria. Restam {len(eleicoes_pendentes)} eleição(ões).")
-
-else:
-    st.info("Preencha seu nome e número do CREA para continuar.")
 
 # --- Resultados ---
 st.title("🏆 Resultados das Eleições Senge-PR")
