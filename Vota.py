@@ -94,36 +94,30 @@ if st.session_state.get("logged_in"):
 
     st.info(f"Eleitor: **{nome}** | CREA: **{crea}**")
 
-    # --- Atualiza eleições pendentes para este CREA ---
+    # --- Atualiza eleições pendentes ---
     def atualizar_eleicoes_pendentes():
         global votos
         votos = carregar_votos()
-        pendentes = []
-        for _, row in active_elections.iterrows():
+        eleicoes_pendentes = []
+        for idx, row in active_elections.iterrows():
             eleicao_id = row['id']
             if not ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
-                pendentes.append(row)
-        return pendentes
+                eleicoes_pendentes.append(row)
+        return eleicoes_pendentes
 
     eleicoes_pendentes = atualizar_eleicoes_pendentes()
     total_eleicoes = len(active_elections)
     votadas = total_eleicoes - len(eleicoes_pendentes)
-
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
-    # --- Próxima eleição a votar ---
-    if eleicoes_pendentes:
-        idx = st.session_state.get("eleicao_idx", 0)
-        if idx >= len(eleicoes_pendentes):
-            idx = 0
-            st.session_state["eleicao_idx"] = 0
-
-        eleicao = eleicoes_pendentes[idx]
+    # --- Próxima eleição ---
+    if eleicoes_pendentes and st.session_state["eleicao_idx"] < len(eleicoes_pendentes):
+        eleicao = eleicoes_pendentes[st.session_state["eleicao_idx"]]
         eleicao_id = eleicao['id']
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
-        # --- Gerar token ---
+        # --- Gerar token apenas em memória ---
         if "token" not in st.session_state:
             if st.button("Gerar Token"):
                 st.session_state["token"] = secrets.token_urlsafe(16)
@@ -154,10 +148,12 @@ if st.session_state.get("logged_in"):
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # Atualizar pendentes e ir para próxima eleição automaticamente
+                        # Atualiza eleições pendentes e índice
                         eleicoes_pendentes = atualizar_eleicoes_pendentes()
-                        if eleicoes_pendentes:
-                            st.session_state["eleicao_idx"] += 1
+                        if len(eleicoes_pendentes) > 0:
+                            if st.button("Ir para próxima eleição"):
+                                st.session_state["eleicao_idx"] += 1
+                                st.experimental_rerun = False  # substituído por controle de fluxo
                         else:
                             st.success("✅ Você já votou em todas as eleições ativas!")
 
@@ -176,7 +172,7 @@ if st.session_state.get("logged_in") and len(atualizar_eleicoes_pendentes()) == 
 
 # --- Resultados ---
 st.title("🏆 Resultados das Eleições Senge-PR")
-for _, row in active_elections.iterrows():
+for idx, row in active_elections.iterrows():
     eleicao_id = row['id']
     votos_eleicao = eleitores[eleitores['eleicao_id']==eleicao_id]
 
