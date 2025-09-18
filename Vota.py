@@ -101,7 +101,6 @@ if st.session_state.get("logged_in"):
         eleicoes_pendentes = []
         for idx, row in active_elections.iterrows():
             eleicao_id = row['id']
-            # Verifica se o CREA já votou nesta eleição
             if not ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
                 eleicoes_pendentes.append(row)
         return eleicoes_pendentes
@@ -112,27 +111,27 @@ if st.session_state.get("logged_in"):
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
-    # --- Próxima eleição ---
+    # --- Se ainda há eleições pendentes ---
     if eleicoes_pendentes and st.session_state["eleicao_idx"] < len(eleicoes_pendentes):
         eleicao = eleicoes_pendentes[st.session_state["eleicao_idx"]]
         eleicao_id = eleicao['id']
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
-        # --- Verifica se já votou nesta eleição ---
+        # Verifica se já votou
         cur.execute("SELECT 1 FROM votos WHERE crea = %s AND eleicao_id = %s", (crea, eleicao_id))
         ja_votou = cur.fetchone()
 
         if ja_votou:
             st.warning("Você já votou nesta eleição!")
         else:
-            # --- Gerar token apenas em memória ---
+            # Gerar token
             if "token" not in st.session_state:
                 if st.button("Gerar Token"):
                     st.session_state["token"] = secrets.token_urlsafe(16)
                     st.success("Token gerado. Confirme seu voto para registrar.")
                     st.code(st.session_state["token"])
 
-            # --- Registrar voto ---
+            # Registrar voto
             if "token" in st.session_state:
                 st.subheader("Registrar voto")
                 candidatos_eleicao = candidatos[candidatos['eleicao_id']==eleicao_id]['nome'].tolist()
@@ -175,34 +174,37 @@ if st.session_state.get("logged_in"):
                 else:
                     st.warning("Nenhum candidato cadastrado para esta eleição.")
 
-# --- Auditoria liberada somente após concluir todas as eleições ---
-if st.session_state.get("logged_in") and len(atualizar_eleicoes_pendentes()) == 0:
-    if st.checkbox("🔎 Ver auditoria de votos"):
-        st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
+    # --- Quando não há eleições pendentes ---
+    elif len(eleicoes_pendentes) == 0:
+        st.success("✅ Você já votou em todas as eleições ativas!")
 
-# --- Resultados ---
-st.title("🏆 Resultados das Eleições Senge-PR")
-for idx, row in active_elections.iterrows():
-    eleicao_id = row['id']
-    votos_eleicao = eleitores[eleitores['eleicao_id']==eleicao_id]
+        # Auditoria
+        if st.checkbox("🔎 Ver auditoria de votos"):
+            st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
 
-    st.subheader(f"{row['nome']}")
-    total_votos = len(votos_eleicao)
-    st.write(f"Total de votos registrados: {total_votos}")
+        # Resultados
+        st.title("🏆 Resultados das Eleições Senge-PR")
+        for idx, row in active_elections.iterrows():
+            eleicao_id = row['id']
+            votos_eleicao = eleitores[eleitores['eleicao_id']==eleicao_id]
 
-    if total_votos >= MIN_VOTOS:
-        first_vote_time = votos_eleicao['datahora'].min()
-        prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
-        agora = datetime.utcnow()
+            st.subheader(f"{row['nome']}")
+            total_votos = len(votos_eleicao)
+            st.write(f"Total de votos registrados: {total_votos}")
 
-        if agora >= prazo_liberacao:
-            st.success("Resultados liberados:")
-            contagem = votos_eleicao.groupby('candidato').size().reset_index(name='Votos')
-            st.table(contagem)
-        else:
-            st.info(
-                f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
-                f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}"
-            )
-    else:
-        st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
+            if total_votos >= MIN_VOTOS:
+                first_vote_time = votos_eleicao['datahora'].min()
+                prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
+                agora = datetime.utcnow()
+
+                if agora >= prazo_liberacao:
+                    st.success("Resultados liberados:")
+                    contagem = votos_eleicao.groupby('candidato').size().reset_index(name='Votos')
+                    st.table(contagem)
+                else:
+                    st.info(
+                        f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
+                        f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}"
+                    )
+            else:
+                st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
