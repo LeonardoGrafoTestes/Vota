@@ -86,12 +86,7 @@ if "logged_in" not in st.session_state:
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
             st.session_state["eleicao_idx"] = 0
-            st.session_state["rerun_login"] = True
-
-# --- Rerun seguro após login ---
-if st.session_state.get("rerun_login"):
-    st.session_state["rerun_login"] = False
-    st.experimental_rerun()  # se usar versão antiga, caso contrário usar lógica de fluxo abaixo
+            st.success("Login realizado! Prossiga para gerar seu token e votar.")
 
 # --- Fluxo de votação ---
 if st.session_state.get("logged_in"):
@@ -102,14 +97,12 @@ if st.session_state.get("logged_in"):
 
     # --- Função para atualizar eleições pendentes ---
     def atualizar_eleicoes_pendentes():
-        global eleitores
-        eleitores = carregar_eleitores()
+        global votos
+        votos = carregar_votos()
         eleicoes_pendentes = []
         for idx, row in active_elections.iterrows():
             eleicao_id = row['id']
-            # verifica se já existe voto na tabela eleitores
-            if not ((eleitores['token_hash'].isin([sha256(crea + str(eleicao_id))])) & 
-                    (eleitores['eleicao_id'] == eleicao_id)).any():
+            if not ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
                 eleicoes_pendentes.append(row)
         return eleicoes_pendentes
 
@@ -126,7 +119,7 @@ if st.session_state.get("logged_in"):
         eleicao_id = eleicao['id']
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
-        # --- Gerar token apenas em memória ---
+        # --- Gerar token ---
         if "token" not in st.session_state:
             if st.button("Gerar Token"):
                 st.session_state["token"] = secrets.token_urlsafe(16)
@@ -144,7 +137,6 @@ if st.session_state.get("logged_in"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
                     try:
-                        # grava na tabela votos e eleitores
                         cur.execute(
                             "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
                             (nome, crea, eleicao_id, token_h, datetime.utcnow())
@@ -158,11 +150,13 @@ if st.session_state.get("logged_in"):
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # atualiza eleições pendentes
+                        # Atualiza eleições pendentes
                         eleicoes_pendentes = atualizar_eleicoes_pendentes()
-                        if len(eleicoes_pendentes) > 0:
+
+                        # Próxima eleição
+                        if st.session_state["eleicao_idx"] + 1 < len(eleicoes_pendentes):
                             st.session_state["eleicao_idx"] += 1
-                            st.experimental_rerun()
+                            st.success("Prossiga para a próxima eleição na lista.")
                         else:
                             st.success("✅ Você já votou em todas as eleições ativas!")
 
