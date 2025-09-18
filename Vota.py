@@ -86,7 +86,6 @@ if "logged_in" not in st.session_state:
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
             st.session_state["eleicao_idx"] = 0
-            st.success("Login realizado! Prossiga para gerar seu token e votar.")
 
 # --- Fluxo de votação ---
 if st.session_state.get("logged_in"):
@@ -95,7 +94,7 @@ if st.session_state.get("logged_in"):
 
     st.info(f"Eleitor: **{nome}** | CREA: **{crea}**")
 
-    # --- Função para atualizar eleições pendentes ---
+    # --- Atualizar eleições pendentes ---
     def atualizar_eleicoes_pendentes():
         global votos
         votos = carregar_votos()
@@ -137,6 +136,7 @@ if st.session_state.get("logged_in"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
                     try:
+                        # Registrar voto
                         cur.execute(
                             "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
                             (nome, crea, eleicao_id, token_h, datetime.utcnow())
@@ -150,13 +150,13 @@ if st.session_state.get("logged_in"):
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # Atualiza eleições pendentes
+                        # Atualizar eleições pendentes
                         eleicoes_pendentes = atualizar_eleicoes_pendentes()
 
-                        # Próxima eleição
+                        # Botão próxima eleição
                         if st.session_state["eleicao_idx"] + 1 < len(eleicoes_pendentes):
-                            st.session_state["eleicao_idx"] += 1
-                            st.success("Prossiga para a próxima eleição na lista.")
+                            if st.button("Ir para próxima eleição"):
+                                st.session_state["eleicao_idx"] += 1
                         else:
                             st.success("✅ Você já votou em todas as eleições ativas!")
 
