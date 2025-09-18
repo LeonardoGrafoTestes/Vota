@@ -73,8 +73,16 @@ active_elections = eleicoes[eleicoes['ativa'] == "TRUE"]
 # --- Streamlit UI ---
 st.title("🗳 Sistema de Votação Senge-PR")
 
-# --- Login inicial ---
+# --- Inicializar session_state ---
 if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+if "eleicao_idx" not in st.session_state:
+    st.session_state["eleicao_idx"] = 0
+if "token" not in st.session_state:
+    st.session_state["token"] = None
+
+# --- Login do eleitor ---
+if not st.session_state["logged_in"]:
     st.subheader("Login do Eleitor")
     nome_input = st.text_input("Nome completo")
     crea_input = st.text_input("Número do CREA")
@@ -86,14 +94,12 @@ if "logged_in" not in st.session_state:
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
             st.session_state["eleicao_idx"] = 0
-            st.session_state["token"] = None
-            st.experimental_set_query_params()  # força atualização inicial
+            st.success("Login realizado! Prossiga para votar.")
 
 # --- Fluxo de votação ---
-if st.session_state.get("logged_in"):
+if st.session_state["logged_in"]:
     nome = st.session_state["nome"]
     crea = st.session_state["crea"]
-
     st.info(f"Eleitor: **{nome}** | CREA: **{crea}**")
 
     # --- Atualizar eleições pendentes ---
@@ -146,13 +152,13 @@ if st.session_state.get("logged_in"):
                             (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
                         )
                         conn.commit()
-                        st.success(f"✅ Voto registrado com sucesso!")
+                        st.success("✅ Voto registrado com sucesso!")
                         st.info("O token foi descartado após o voto.")
                         st.session_state["token"] = None
 
-                        # Avança automaticamente para a próxima eleição
+                        # Avança para a próxima eleição
                         st.session_state["eleicao_idx"] += 1
-                        st.experimental_set_query_params()  # força atualização da página
+
                     except psycopg2.IntegrityError:
                         conn.rollback()
                         st.error("Você já votou nesta eleição!")
@@ -160,7 +166,6 @@ if st.session_state.get("logged_in"):
                         st.error(f"Erro ao registrar voto: {e}")
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
-
     else:
         st.success("✅ Você já votou em todas as eleições ativas!")
 
