@@ -156,8 +156,12 @@ if st.session_state["logged_in"]:
                         st.info("O token foi descartado após o voto.")
                         st.session_state["token"] = None
 
-                        # Avança para a próxima eleição
-                        st.session_state["eleicao_idx"] += 1
+                        # Avança para próxima eleição automaticamente se houver
+                        if st.session_state["eleicao_idx"] + 1 < len(eleicoes_pendentes):
+                            if st.button("Ir para próxima eleição"):
+                                st.session_state["eleicao_idx"] += 1
+                        else:
+                            st.success("✅ Você já votou em todas as eleições ativas!")
 
                     except psycopg2.IntegrityError:
                         conn.rollback()
