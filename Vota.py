@@ -94,7 +94,7 @@ if st.session_state.get("logged_in"):
 
     st.info(f"Eleitor: **{nome}** | CREA: **{crea}**")
 
-    # --- Atualiza eleições pendentes ---
+    # --- Função para atualizar eleições pendentes ---
     def atualizar_eleicoes_pendentes():
         global votos
         votos = carregar_votos()
@@ -108,6 +108,7 @@ if st.session_state.get("logged_in"):
     eleicoes_pendentes = atualizar_eleicoes_pendentes()
     total_eleicoes = len(active_elections)
     votadas = total_eleicoes - len(eleicoes_pendentes)
+
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
@@ -135,10 +136,12 @@ if st.session_state.get("logged_in"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
                     try:
+                        # Inserir na tabela votos
                         cur.execute(
                             "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
                             (nome, crea, eleicao_id, token_h, datetime.utcnow())
                         )
+                        # Inserir na tabela eleitores
                         cur.execute(
                             "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
                             (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
@@ -148,12 +151,13 @@ if st.session_state.get("logged_in"):
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # Atualiza eleições pendentes e índice
+                        # Atualiza eleições pendentes
                         eleicoes_pendentes = atualizar_eleicoes_pendentes()
-                        if len(eleicoes_pendentes) > 0:
+
+                        # Botão para próxima eleição, se houver mais
+                        if st.session_state["eleicao_idx"] < len(eleicoes_pendentes) - 1:
                             if st.button("Ir para próxima eleição"):
                                 st.session_state["eleicao_idx"] += 1
-                                st.experimental_rerun = False  # substituído por controle de fluxo
                         else:
                             st.success("✅ Você já votou em todas as eleições ativas!")
 
