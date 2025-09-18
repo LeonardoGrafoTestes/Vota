@@ -48,9 +48,9 @@ def carregar_candidatos():
     return pd.DataFrame(rows, columns=["eleicao_id", "nome"])
 
 def carregar_votos():
-    cur.execute("SELECT id, eleicao_id, token_hash, datahora, crea FROM votos;")
+    cur.execute("SELECT id, nome, crea, eleicao_id, token_hash, datahora FROM votos;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["id","eleicao_id","token_hash","datahora","crea"])
+    df = pd.DataFrame(rows, columns=["id", "nome", "crea", "eleicao_id", "token_hash", "datahora"])
     df['datahora'] = pd.to_datetime(df['datahora'], errors='coerce')
     return df
 
@@ -135,10 +135,12 @@ if st.session_state.get("logged_in"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
                     try:
+                        # grava na tabela votos
                         cur.execute(
                             "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
                             (nome, crea, eleicao_id, token_h, datetime.utcnow())
                         )
+                        # grava na tabela eleitores (auditoria)
                         cur.execute(
                             "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
                             (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
@@ -148,19 +150,15 @@ if st.session_state.get("logged_in"):
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # Atualiza eleições pendentes e índice
-                        eleicoes_pendentes = atualizar_eleicoes_pendentes()
-                        if len(eleicoes_pendentes) > 0:
-                            if st.button("Ir para próxima eleição"):
-                                st.session_state["eleicao_idx"] += 1
-                                st.experimental_rerun = False  # substituído por controle de fluxo
-                        else:
-                            st.success("✅ Você já votou em todas as eleições ativas!")
+                        # avança automaticamente
+                        st.session_state["eleicao_idx"] += 1
+                        st.experimental_rerun()
 
                     except psycopg2.IntegrityError:
                         conn.rollback()
                         st.error("Você já votou nesta eleição!")
                     except Exception as e:
+                        conn.rollback()
                         st.error(f"Erro ao registrar voto: {e}")
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
