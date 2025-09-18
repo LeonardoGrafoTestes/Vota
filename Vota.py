@@ -68,12 +68,12 @@ votos = carregar_votos()
 eleitores = carregar_eleitores()
 
 eleicoes['ativa'] = eleicoes['ativa'].astype(str).str.upper()
-active_elections = eleicoes[eleicoes['ativa'] == "TRUE"].reset_index(drop=True)
+active_elections = eleicoes[eleicoes['ativa'] == "TRUE"]
 
 # --- Streamlit UI ---
 st.title("🗳 Sistema de Votação Senge-PR")
 
-# --- Login ---
+# --- Login inicial ---
 if "logged_in" not in st.session_state:
     st.subheader("Login do Eleitor")
     nome_input = st.text_input("Nome completo")
@@ -85,97 +85,73 @@ if "logged_in" not in st.session_state:
             st.session_state["nome"] = nome_input.strip()
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
-            st.session_state["eleicao_idx"] = 0
-            st.session_state["token"] = None
 
-# --- Fluxo de votação em loop ---
+# --- Fluxo de votação ---
 if st.session_state.get("logged_in"):
     nome = st.session_state["nome"]
     crea = st.session_state["crea"]
     st.info(f"Eleitor: **{nome}** | CREA: **{crea}**")
 
-    # Atualiza votos e eleitores
+    # --- Atualiza votos ---
     votos = carregar_votos()
-    eleitores = carregar_eleitores()
 
-    total_eleicoes = len(active_elections)
-    votadas = sum([((votos['crea']==crea) & (votos['eleicao_id']==eid)).any() for eid in active_elections['id']])
-    st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
-    st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
-
-    # --- Loop sequencial de eleições ---
-    idx = st.session_state.get("eleicao_idx", 0)
-
-    while idx < total_eleicoes:
-        eleicao = active_elections.iloc[idx]
+    # --- Mostrar todas as eleições na mesma página ---
+    st.subheader("Registrar votos")
+    votos_selecionados = {}
+    for idx, eleicao in active_elections.iterrows():
         eleicao_id = eleicao['id']
-        st.info(f"Próxima eleição: **{eleicao['nome']}**")
-
-        ja_votou = ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any()
-
-        if ja_votou:
+        st.markdown(f"### {eleicao['nome']}")
+        
+        # Verifica se o eleitor já votou nesta eleição
+        if ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
             st.warning("Você já votou nesta eleição!")
         else:
-            if st.session_state.get("token") is None:
-                if st.button(f"Gerar Token ({eleicao['nome']})"):
-                    st.session_state["token"] = secrets.token_urlsafe(16)
-                    st.success("Token gerado. Confirme seu voto para registrar.")
-                    st.code(st.session_state["token"])
+            candidatos_eleicao = candidatos[candidatos['eleicao_id'] == eleicao_id]['nome'].tolist()
+            if candidatos_eleicao:
+                voto = st.radio(f"Escolha seu candidato para {eleicao['nome']}:", candidatos_eleicao, key=f"eleicao_{eleicao_id}")
+                votos_selecionados[eleicao_id] = voto
+            else:
+                st.warning("Nenhum candidato cadastrado para esta eleição.")
 
-            if st.session_state.get("token") and not ja_votou:
-                st.subheader("Registrar voto")
-                candidatos_eleicao = candidatos[candidatos['eleicao_id']==eleicao_id]['nome'].tolist()
-                if candidatos_eleicao:
-                    candidato = st.radio("Escolha seu candidato:", candidatos_eleicao, key=f"radio_{eleicao_id}")
-                    if st.button(f"Confirmar Voto ({eleicao['nome']})"):
-                        token_h = sha256(st.session_state["token"])
-                        vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
-                        try:
-                            cur.execute("BEGIN;")
-                            cur.execute(
-                                "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
-                                (nome, crea, eleicao_id, token_h, datetime.utcnow())
-                            )
-                            cur.execute(
-                                "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
-                                (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
-                            )
-                            conn.commit()
-                            st.success(f"✅ Voto registrado com sucesso para **{candidato}**!")
-                            st.info("O token foi descartado após o voto.")
-                            st.session_state["token"] = None
-                            idx += 1
-                            st.session_state["eleicao_idx"] = idx
-                            break  # quebra o loop para atualizar interface
-                        except psycopg2.IntegrityError:
-                            conn.rollback()
-                            st.error("Você já votou nesta eleição!")
-                        except Exception as e:
-                            conn.rollback()
-                            st.error(f"Erro ao registrar voto: {e}")
-                else:
-                    st.warning("Nenhum candidato cadastrado para esta eleição.")
-
-        # Botão para ir para próxima eleição
-        if idx + 1 < total_eleicoes:
-            if st.button(f"Ir para próxima eleição ({active_elections.iloc[idx+1]['nome']})"):
-                idx += 1
-                st.session_state["eleicao_idx"] = idx
-                break
+    # --- Confirmar todos os votos ---
+    if votos_selecionados and st.button("Confirmar todos os votos"):
+        if len(votos_selecionados) != len(active_elections):
+            st.error("É necessário votar em todas as eleições antes de confirmar.")
         else:
-            st.success("✅ Você já votou em todas as eleições ativas!")
-            break
+            try:
+                cur.execute("BEGIN;")
+                for eleicao_id, candidato in votos_selecionados.items():
+                    token = secrets.token_urlsafe(16)
+                    token_h = sha256(token)
+                    vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
+                    cur.execute(
+                        "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
+                        (nome, crea, eleicao_id, token_h, datetime.utcnow())
+                    )
+                    cur.execute(
+                        "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
+                        (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
+                    )
+                conn.commit()
+                st.success("✅ Todos os votos foram registrados com sucesso!")
+            except psycopg2.IntegrityError:
+                conn.rollback()
+                st.error("Você já votou em alguma das eleições!")
+            except Exception as e:
+                conn.rollback()
+                st.error(f"Erro ao registrar votos: {e}")
 
-# --- Auditoria liberada somente após todas eleições ---
-if st.session_state.get("logged_in") and all([((votos['crea']==crea) & (votos['eleicao_id']==eid)).any() for eid in active_elections['id']]):
+# --- Auditoria liberada somente após concluir todas as eleições ---
+eleicoes_pendentes = [e for idx, e in active_elections.iterrows() if not ((votos['crea'] == crea) & (votos['eleicao_id'] == e['id'])).any()]
+if st.session_state.get("logged_in") and len(eleicoes_pendentes) == 0:
     if st.checkbox("🔎 Ver auditoria de votos"):
-        st.dataframe(eleitores.drop(columns=['candidato']))
+        st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
 
 # --- Resultados ---
 st.title("🏆 Resultados das Eleições Senge-PR")
-for _, row in active_elections.iterrows():
+for idx, row in active_elections.iterrows():
     eleicao_id = row['id']
-    votos_eleicao = eleitores[eleitores['eleicao_id']==eleicao_id]
+    votos_eleicao = eleitores[eleitores['eleicao_id'] == eleicao_id]
 
     st.subheader(f"{row['nome']}")
     total_votos = len(votos_eleicao)
