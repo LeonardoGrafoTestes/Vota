@@ -85,14 +85,8 @@ if "logged_in" not in st.session_state:
             st.session_state["nome"] = nome_input.strip()
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
-            st.session_state["eleicoes_pendentes"] = []  # Lista de eleições pendentes
             st.session_state["eleicao_idx"] = 0
-            st.session_state["rerun_login"] = True
-
-# --- Rerun seguro após login ---
-if st.session_state.get("rerun_login"):
-    st.session_state["rerun_login"] = False
-    st.experimental_rerun()
+            st.session_state["token"] = None
 
 # --- Fluxo de votação ---
 if st.session_state.get("logged_in"):
@@ -110,7 +104,6 @@ if st.session_state.get("logged_in"):
             eleicao_id = row['id']
             if not ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
                 eleicoes_pendentes.append(row)
-        st.session_state["eleicoes_pendentes"] = eleicoes_pendentes
         return eleicoes_pendentes
 
     eleicoes_pendentes = atualizar_eleicoes_pendentes()
@@ -127,14 +120,14 @@ if st.session_state.get("logged_in"):
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
         # --- Gerar token ---
-        if "token" not in st.session_state:
+        if st.session_state["token"] is None:
             if st.button("Gerar Token"):
                 st.session_state["token"] = secrets.token_urlsafe(16)
                 st.success("Token gerado. Confirme seu voto para registrar.")
                 st.code(st.session_state["token"])
 
         # --- Registrar voto ---
-        if "token" in st.session_state:
+        if st.session_state["token"] is not None:
             st.subheader("Registrar voto")
             candidatos_eleicao = candidatos[candidatos['eleicao_id']==eleicao_id]['nome'].tolist()
             if candidatos_eleicao:
@@ -152,13 +145,14 @@ if st.session_state.get("logged_in"):
                             (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
                         )
                         conn.commit()
-                        st.success(f"✅ Voto registrado com sucesso para **{candidato}**!")
+                        st.success(f"✅ Voto registrado com sucesso!")
                         st.info("O token foi descartado após o voto.")
-                        del st.session_state["token"]
+                        st.session_state["token"] = None
 
-                        # Atualizar índice para próxima eleição
+                        # Avança automaticamente para a próxima eleição
                         st.session_state["eleicao_idx"] += 1
-                        st.experimental_rerun()
+                        st.experimental_rerun = None  # não usar experimental_rerun
+                        st.session_state["rerun"] = True  # flag de rerun
                     except psycopg2.IntegrityError:
                         conn.rollback()
                         st.error("Você já votou nesta eleição!")
@@ -167,38 +161,10 @@ if st.session_state.get("logged_in"):
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
 
-    # --- Mensagem se já votou em todas ---
-    if not eleicoes_pendentes or st.session_state["eleicao_idx"] >= len(eleicoes_pendentes):
+    else:
         st.success("✅ Você já votou em todas as eleições ativas!")
 
-# --- Auditoria liberada somente após concluir todas as eleições ---
-if st.session_state.get("logged_in") and len(st.session_state.get("eleicoes_pendentes", [])) == 0:
-    if st.checkbox("🔎 Ver auditoria de votos"):
-        st.dataframe(eleitores.drop(columns=['candidato']))  # manter anonimato
-
-# --- Resultados ---
-st.title("🏆 Resultados das Eleições Senge-PR")
-for idx, row in active_elections.iterrows():
-    eleicao_id = row['id']
-    votos_eleicao = eleitores[eleitores['eleicao_id']==eleicao_id]
-
-    st.subheader(f"{row['nome']}")
-    total_votos = len(votos_eleicao)
-    st.write(f"Total de votos registrados: {total_votos}")
-
-    if total_votos >= MIN_VOTOS:
-        first_vote_time = votos_eleicao['datahora'].min()
-        prazo_liberacao = first_vote_time + timedelta(minutes=TEMPO_LIMITE_MIN)
-        agora = datetime.utcnow()
-
-        if agora >= prazo_liberacao:
-            st.success("Resultados liberados:")
-            contagem = votos_eleicao.groupby('candidato').size().reset_index(name='Votos')
-            st.table(contagem)
-        else:
-            st.info(
-                f"Resultados serão liberados após {TEMPO_LIMITE_MIN} minutos desde o primeiro voto.\n"
-                f"Prazo de liberação: {prazo_liberacao.strftime('%d/%m/%Y %H:%M:%S UTC')}"
-            )
-    else:
-        st.warning(f"Aguardando pelo menos {MIN_VOTOS} votos para exibir resultados.")
+# --- Flag de rerun manual ---
+if st.session_state.get("rerun"):
+    st.session_state["rerun"] = False
+    st.experimental_rerun()
