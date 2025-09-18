@@ -149,7 +149,7 @@ if st.session_state.get("logged_in"):
                         del st.session_state["token"]
 
                         # Atualiza automaticamente a tela para mostrar a próxima eleição
-                        st.experimental_rerun()
+                        st.rerun()
 
                     except psycopg2.IntegrityError:
                         conn.rollback()
