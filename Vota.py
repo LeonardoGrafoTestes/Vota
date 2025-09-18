@@ -20,7 +20,7 @@ try:
         dbname=DBNAME,
         user=USER,
         password=PASSWORD,
-        sslmode="require"  # necessário para Supabase
+        sslmode="require"
     )
     cur = conn.cursor()
 except Exception as e:
@@ -103,7 +103,7 @@ if st.session_state.get("logged_in"):
         conn.commit()
         st.success("✅ Todos os votos registrados com sucesso!")
 
-# --- Resultados (opcional) ---
+# --- Resultados ---
 st.title("🏆 Resultados das Eleições")
 cur.execute("""
     SELECT e.titulo, c.nome, COUNT(v.id) as votos
