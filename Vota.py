@@ -48,9 +48,9 @@ def carregar_candidatos():
     return pd.DataFrame(rows, columns=["eleicao_id", "nome"])
 
 def carregar_votos():
-    cur.execute("SELECT id, nome, crea, eleicao_id, token_hash, datahora FROM votos;")
+    cur.execute("SELECT id, eleicao_id, token_hash, datahora, crea FROM votos;")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["id", "nome", "crea", "eleicao_id", "token_hash", "datahora"])
+    df = pd.DataFrame(rows, columns=["id","eleicao_id","token_hash","datahora","crea"])
     df['datahora'] = pd.to_datetime(df['datahora'], errors='coerce')
     return df
 
@@ -85,7 +85,6 @@ if "logged_in" not in st.session_state:
             st.session_state["nome"] = nome_input.strip()
             st.session_state["crea"] = crea_input.strip()
             st.session_state["logged_in"] = True
-            st.session_state["eleicao_idx"] = 0
 
 # --- Fluxo de votação ---
 if st.session_state.get("logged_in"):
@@ -101,6 +100,7 @@ if st.session_state.get("logged_in"):
         eleicoes_pendentes = []
         for idx, row in active_elections.iterrows():
             eleicao_id = row['id']
+            # Se ainda não existe voto deste CREA para essa eleição
             if not ((votos['crea'] == crea) & (votos['eleicao_id'] == eleicao_id)).any():
                 eleicoes_pendentes.append(row)
         return eleicoes_pendentes
@@ -111,9 +111,9 @@ if st.session_state.get("logged_in"):
     st.progress(votadas / total_eleicoes if total_eleicoes > 0 else 1.0)
     st.write(f"Eleições votadas: {votadas} / {total_eleicoes}")
 
-    # --- Próxima eleição ---
-    if eleicoes_pendentes and st.session_state["eleicao_idx"] < len(eleicoes_pendentes):
-        eleicao = eleicoes_pendentes[st.session_state["eleicao_idx"]]
+    # --- Mostrar próxima eleição pendente ---
+    if eleicoes_pendentes:
+        eleicao = eleicoes_pendentes[0]  # pega a primeira pendente
         eleicao_id = eleicao['id']
         st.info(f"Próxima eleição: **{eleicao['nome']}**")
 
@@ -135,12 +135,10 @@ if st.session_state.get("logged_in"):
                     token_h = sha256(st.session_state["token"])
                     vote_hash = sha256(token_h + candidato + secrets.token_hex(8))
                     try:
-                        # grava na tabela votos
                         cur.execute(
                             "INSERT INTO votos (nome, crea, eleicao_id, token_hash, datahora) VALUES (%s,%s,%s,%s,%s)",
                             (nome, crea, eleicao_id, token_h, datetime.utcnow())
                         )
-                        # grava na tabela eleitores (auditoria)
                         cur.execute(
                             "INSERT INTO eleitores (datahora, eleicao_id, candidato, token_hash, vote_hash) VALUES (%s,%s,%s,%s,%s)",
                             (datetime.utcnow(), eleicao_id, candidato, token_h, vote_hash)
@@ -150,18 +148,18 @@ if st.session_state.get("logged_in"):
                         st.info("O token foi descartado após o voto.")
                         del st.session_state["token"]
 
-                        # avança automaticamente
-                        st.session_state["eleicao_idx"] += 1
+                        # Atualiza automaticamente a tela para mostrar a próxima eleição
                         st.experimental_rerun()
 
                     except psycopg2.IntegrityError:
                         conn.rollback()
                         st.error("Você já votou nesta eleição!")
                     except Exception as e:
-                        conn.rollback()
                         st.error(f"Erro ao registrar voto: {e}")
             else:
                 st.warning("Nenhum candidato cadastrado para esta eleição.")
+    else:
+        st.success("✅ Você já votou em todas as eleições ativas!")
 
 # --- Auditoria liberada somente após concluir todas as eleições ---
 if st.session_state.get("logged_in") and len(atualizar_eleicoes_pendentes()) == 0:
