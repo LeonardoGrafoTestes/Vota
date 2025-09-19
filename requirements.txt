@@ -5,3 +5,5 @@ pandas
 gspread
 oauth2client
 google-auth
+sqlalchemy
+pandas
