@@ -1,7 +1,11 @@
 import streamlit as st
 import psycopg2
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
+
+# ------------------ CONFIGURAÇÕES ------------------
+MIN_VOTOS = 2          # mínimo de votos para mostrar o resultado
+TEMPO_ESPERA_MIN = 10  # minutos após o início para liberar resultado
 
 # ------------------ CONEXÃO ------------------
 def get_connection():
@@ -42,14 +46,10 @@ def get_candidatos(eleicao_id):
     return []
 
 def registrar_votos(eleitor_id, escolhas):
-    """
-    escolhas = dict { eleicao_id: candidato_id }
-    """
     conn = get_connection()
     if conn:
         cur = conn.cursor()
 
-        # Verifica se já votou em alguma dessas eleições
         cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = ANY(%s)",
                     (eleitor_id, list(escolhas.keys())))
         ja_votadas = [row[0] for row in cur.fetchall()]
@@ -57,7 +57,6 @@ def registrar_votos(eleitor_id, escolhas):
             cur.close()
             return False, f"Você já votou nas eleições: {ja_votadas}"
 
-        # Grava todos os votos (secretos)
         for eleicao_id, candidato_id in escolhas.items():
             cur.execute("INSERT INTO votos (eleicao_id, candidato_id, datahora) VALUES (%s,%s,%s)",
                         (eleicao_id, candidato_id, datetime.now()))
@@ -66,13 +65,30 @@ def registrar_votos(eleitor_id, escolhas):
 
         conn.commit()
         cur.close()
-        return True, "Todos os votos foram registrados com sucesso!"
+        return True, "✅ Voto registrado com sucesso! Obrigado por participar."
     return False, "Erro de conexão."
+
+def get_resultados():
+    conn = get_connection()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT e.id, e.titulo, e.data_inicio, c.nome, COUNT(v.id) as votos
+            FROM eleicoes e
+            JOIN candidatos c ON e.id = c.eleicao_id
+            LEFT JOIN votos v ON c.id = v.candidato_id
+            GROUP BY e.id, e.titulo, e.data_inicio, c.id, c.nome
+            ORDER BY e.id, votos DESC
+        """)
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+    return []
 
 # ------------------ INTERFACE ------------------
 st.title("🗳️ Sistema de Votação Online")
 
-menu = st.sidebar.radio("Navegação", ["Login", "Votar"])
+menu = st.sidebar.radio("Navegação", ["Login", "Votar", "Resultados"])
 
 # LOGIN
 if menu == "Login":
@@ -114,32 +130,69 @@ elif menu == "Votar":
         if not eleicoes:
             st.info("Nenhuma eleição ativa.")
         else:
-            escolhas = {}
-            for eleicao_id, titulo, data_inicio in eleicoes:
-                st.write(f"### {titulo}")
-                candidatos = get_candidatos(eleicao_id)
+            # Verifica se eleitor já votou em todas
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM votos_registro WHERE eleitor_id = %s", (st.session_state["eleitor_id"],))
+            qtd_votadas = cur.fetchone()[0]
+            cur.close()
 
-                if not candidatos:
-                    st.info("Nenhum candidato cadastrado.")
-                    continue
-
-                escolhido = st.radio(
-                    f"Escolha seu candidato para {titulo}:",
-                    [f"{c[0]} - {c[1]}" for c in candidatos],
-                    key=f"eleicao_{eleicao_id}"
-                )
-
-                if escolhido:
-                    escolhas[eleicao_id] = int(escolhido.split(" - ")[0])
-
-            # Só habilita confirmar se todas as eleições receberam voto
-            if len(escolhas) == len(eleicoes):
-                if st.button("✅ Confirmar todos os votos"):
-                    sucesso, msg = registrar_votos(st.session_state["eleitor_id"], escolhas)
-                    if sucesso:
-                        st.success(msg)
-                        st.experimental_rerun()
-                    else:
-                        st.error(msg)
+            if qtd_votadas == len(eleicoes):
+                st.success("✅ Você já votou em todas as eleições. Obrigado pela sua participação!")
             else:
-                st.info("Você precisa votar em todas as eleições antes de confirmar.")
+                escolhas = {}
+                for eleicao_id, titulo, data_inicio in eleicoes:
+                    st.write(f"### {titulo}")
+                    candidatos = get_candidatos(eleicao_id)
+
+                    if not candidatos:
+                        st.info("Nenhum candidato cadastrado.")
+                        continue
+
+                    escolhido = st.radio(
+                        f"Escolha seu candidato para {titulo}:",
+                        [f"{c[0]} - {c[1]}" for c in candidatos],
+                        key=f"eleicao_{eleicao_id}"
+                    )
+
+                    if escolhido:
+                        escolhas[eleicao_id] = int(escolhido.split(" - ")[0])
+
+                if len(escolhas) == len(eleicoes):
+                    if st.button("✅ Confirmar todos os votos"):
+                        sucesso, msg = registrar_votos(st.session_state["eleitor_id"], escolhas)
+                        if sucesso:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                else:
+                    st.info("Você precisa votar em todas as eleições antes de confirmar.")
+
+# RESULTADOS
+elif menu == "Resultados":
+    st.subheader("📊 Resultados das Eleições")
+    resultados = get_resultados()
+
+    if not resultados:
+        st.info("Nenhum resultado disponível.")
+    else:
+        df = pd.DataFrame(resultados, columns=["eleicao_id", "Eleição", "Data Início", "Candidato", "Votos"])
+
+        # Verifica regras
+        agora = datetime.now()
+        for eleicao_id in df["eleicao_id"].unique():
+            sub = df[df["eleicao_id"] == eleicao_id]
+            data_inicio = sub["Data Início"].iloc[0]
+            total_votos = sub["Votos"].sum()
+
+            if total_votos < MIN_VOTOS:
+                st.warning(f"⚠️ Aguardando pelo menos {MIN_VOTOS} votos para mostrar resultados da eleição **{sub['Eleição'].iloc[0]}**.")
+                continue
+
+            if agora < data_inicio + timedelta(minutes=TEMPO_ESPERA_MIN):
+                st.warning(f"⏳ Resultados da eleição **{sub['Eleição'].iloc[0]}** disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
+                continue
+
+            st.write(f"### {sub['Eleição'].iloc[0]}")
+            st.table(sub[["Candidato", "Votos"]])
