@@ -7,20 +7,24 @@ from datetime import datetime, timedelta
 MIN_VOTOS = 2        # quantidade mínima de votos para liberar resultados
 TEMPO_MINUTOS = 10   # tempo mínimo em minutos para liberar resultados após início
 
-# Conexão com o Supabase usando secrets
+# ------------------ CONEXÃO ------------------
 def get_connection():
-    try:
-        db_url = st.secrets["connections"]["supabase"]["url"]
-        conn = psycopg2.connect(db_url)
-        return conn
-    except Exception as e:
-        st.error(f"Erro ao conectar ao banco: {e}")
-        return None
+    """Mantém a conexão ativa durante a sessão"""
+    if "conn" not in st.session_state:
+        try:
+            db_url = st.secrets["connections"]["supabase"]["url"]
+            st.session_state["conn"] = psycopg2.connect(db_url)
+        except Exception as e:
+            st.error(f"Erro ao conectar ao banco: {e}")
+            return None
+    return st.session_state["conn"]
 
 # ------------------ FUNÇÕES ------------------
-
 def autenticar_ou_cadastrar_eleitor(nome, crea, email=None):
     """Autentica ou cadastra o eleitor se não existir"""
+    if not crea.isdigit():
+        st.error("O CREA deve conter apenas números.")
+        return None
     conn = get_connection()
     if conn:
         cur = conn.cursor()
@@ -28,7 +32,6 @@ def autenticar_ou_cadastrar_eleitor(nome, crea, email=None):
         eleitor = cur.fetchone()
         if eleitor:
             cur.close()
-            conn.close()
             return eleitor
         else:
             # cadastra novo eleitor
@@ -39,7 +42,6 @@ def autenticar_ou_cadastrar_eleitor(nome, crea, email=None):
             eleitor_id = cur.fetchone()[0]
             conn.commit()
             cur.close()
-            conn.close()
             return (eleitor_id, nome)
     return None
 
@@ -50,7 +52,6 @@ def get_eleicoes():
         cur.execute("SELECT id, titulo, data_inicio FROM eleicoes WHERE ativa = true ORDER BY id")
         rows = cur.fetchall()
         cur.close()
-        conn.close()
         return rows
     return []
 
@@ -61,7 +62,6 @@ def get_candidatos(eleicao_id):
         cur.execute("SELECT id, nome FROM candidatos WHERE eleicao_id = %s", (eleicao_id,))
         rows = cur.fetchall()
         cur.close()
-        conn.close()
         return rows
     return []
 
@@ -73,7 +73,6 @@ def registrar_voto(eleitor_id, eleicao_id, candidato_id):
         cur.execute("SELECT 1 FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = %s", (eleitor_id, eleicao_id))
         if cur.fetchone():
             cur.close()
-            conn.close()
             return False, "Você já votou nesta eleição."
 
         # Insere voto secreto
@@ -86,7 +85,6 @@ def registrar_voto(eleitor_id, eleicao_id, candidato_id):
 
         conn.commit()
         cur.close()
-        conn.close()
         return True, "Voto registrado com sucesso!"
     return False, "Erro de conexão."
 
@@ -101,12 +99,10 @@ def get_resultados(eleicao_id, data_inicio):
 
         if total_votos < MIN_VOTOS:
             cur.close()
-            conn.close()
             return None, f"Aguardando pelo menos {MIN_VOTOS} votos (atualmente: {total_votos})."
 
         if datetime.now() < data_inicio + timedelta(minutes=TEMPO_MINUTOS):
             cur.close()
-            conn.close()
             return None, f"Resultados liberados após {TEMPO_MINUTOS} minutos do início da eleição."
 
         # busca resultados
@@ -120,14 +116,11 @@ def get_resultados(eleicao_id, data_inicio):
         """, (eleicao_id,))
         resultados = cur.fetchall()
         cur.close()
-        conn.close()
         return resultados, None
     return None, "Erro de conexão."
 
 # ------------------ INTERFACE ------------------
-
 st.title("🗳️ Sistema de Votação Online")
-
 menu = st.sidebar.radio("Navegação", ["Login", "Votar", "Resultados"])
 
 # LOGIN / CADASTRO
