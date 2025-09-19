@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # ------------------ CONFIGURAÇÕES ------------------
-MIN_VOTOS = 5          # mínimo de votos para mostrar o resultado
+MIN_VOTOS = 2          # mínimo de votos para mostrar o resultado
 TEMPO_ESPERA_MIN = 10  # minutos após o início para liberar resultado
 
 # ------------------ CONEXÃO ------------------
@@ -179,10 +179,9 @@ elif menu == "Resultados":
     else:
         df = pd.DataFrame(resultados, columns=["eleicao_id", "Eleição", "Data Início", "Candidato", "Votos"])
 
-        # Verifica regras
         agora = datetime.now()
         for eleicao_id in df["eleicao_id"].unique():
-            sub = df[df["eleicao_id"] == eleicao_id]
+            sub = df[df["eleicao_id"] == eleicao_id].copy()
             data_inicio = sub["Data Início"].iloc[0]
             total_votos = sub["Votos"].sum()
 
@@ -194,6 +193,9 @@ elif menu == "Resultados":
                 st.warning(f"⏳ Resultados da eleição **{sub['Eleição'].iloc[0]}** disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
                 continue
 
-            st.write(f"### {sub['Eleição'].iloc[0]}")
-            st.table(sub[["Candidato", "Votos"]])
+            # Calcula % de votos
+            sub["%"] = sub["Votos"] / total_votos * 100
+            sub = sub.sort_values(by="Votos", ascending=False)
 
+            st.write(f"### {sub['Eleição'].iloc[0]}")
+            st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
