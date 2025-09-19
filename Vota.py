@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # ------------------ CONFIGURAÇÕES ------------------
-MIN_VOTOS = 2          # mínimo de votos para mostrar o resultado
+MIN_VOTOS = 5          # mínimo de votos para mostrar o resultado
 TEMPO_ESPERA_MIN = 10  # minutos após o início para liberar resultado
 
 # ------------------ CONEXÃO ------------------
@@ -199,3 +199,4 @@ elif menu == "Resultados":
 
             st.write(f"### {sub['Eleição'].iloc[0]}")
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
+
