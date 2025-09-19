@@ -2,7 +2,6 @@ import streamlit as st
 import psycopg2
 import pandas as pd
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
 
 # ------------------ CONFIGURAÇÕES ------------------
 MIN_VOTOS = 2        # quantidade mínima de votos para liberar resultados
@@ -13,18 +12,14 @@ def get_connection():
     """Mantém a conexão ativa durante a sessão"""
     if "conn" not in st.session_state:
         try:
-            db_url = st.secrets["connections"]["supabase"]["url"]
-            
-            # Parse da URL
-            result = urlparse(db_url)
-            conn_params = {
-                "dbname": result.path[1:],  # remove a barra inicial
-                "user": result.username,
-                "password": result.password,
-                "host": result.hostname,
-                "port": result.port
-            }
-            st.session_state["conn"] = psycopg2.connect(**conn_params)
+            supabase = st.secrets["connections"]["supabase"]
+            st.session_state["conn"] = psycopg2.connect(
+                host=supabase["host"],
+                port=supabase["port"],
+                dbname=supabase["dbname"],
+                user=supabase["user"],
+                password=supabase["password"]
+            )
         except Exception as e:
             st.error(f"Erro ao conectar ao banco: {e}")
             return None
@@ -195,3 +190,8 @@ elif menu == "Resultados":
             eleicao_id, titulo, data_inicio = e
             st.write(f"### {titulo}")
             resultados, msg = get_resultados(eleicao_id, data_inicio)
+            if msg:
+                st.info(msg)
+            elif resultados:
+                df = pd.DataFrame(resultados, columns=["Candidato", "Total de Votos"])
+                st.table(df)
