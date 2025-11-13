@@ -201,3 +201,21 @@ elif menu == "Resultados":
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
 
 
+# ------------------ RODAPÉ PERSONALIZADO ------------------
+st.markdown(
+    f"""
+    <style>
+    .rodape {{
+        position: fixed;
+        left: 20px;
+        bottom: 10px;
+        color: #999999;
+        font-size: 14px;
+        font-family: "Segoe UI", sans-serif;
+    }}
+    </style>
+    <div class="rodape">👨‍💻 Desenvolvido por <b>Leonardo Dutra</b> © {datetime.now().year}</div>
+    """,
+    unsafe_allow_html=True
+)
+
