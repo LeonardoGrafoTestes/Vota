@@ -68,6 +68,43 @@ def registrar_votos(eleitor_id, escolhas):
         return True, "✅ Voto registrado com sucesso! Obrigado por participar."
     return False, "Erro de conexão."
 
+def registrar_branco_nulo(eleitor_id, eleicoes):
+    conn = get_connection()
+    if conn:
+        cur = conn.cursor()
+
+        # Verifica se já votou
+        cur.execute("SELECT id FROM votos_registro WHERE eleitor_id = %s", (eleitor_id,))
+        ja_votou = cur.fetchone()
+        if ja_votou:
+            cur.close()
+            return False, "Você já votou. Não é possível votar novamente."
+
+        # Para cada eleição, encontra o candidato BRANCO/NULO
+        for eleicao_id, titulo, data_inicio in eleicoes:
+            cur.execute("""
+                SELECT id FROM candidatos 
+                WHERE eleicao_id = %s AND nome ILIKE 'branco/nulo'
+            """, (eleicao_id,))
+            candidato = cur.fetchone()
+            if not candidato:
+                cur.close()
+                return False, f"A eleição '{titulo}' não possui candidato BRANCO/NULO cadastrado."
+            candidato_id = candidato[0]
+
+            # Insere voto
+            cur.execute("INSERT INTO votos (eleicao_id, candidato_id, datahora) VALUES (%s,%s,%s)",
+                        (eleicao_id, candidato_id, datetime.now()))
+
+        # Marca registro para bloquear novos votos
+        cur.execute("INSERT INTO votos_registro (eleitor_id, eleicao_id, datahora) VALUES (%s, -1, %s)",
+                    (eleitor_id, datetime.now()))
+
+        conn.commit()
+        cur.close()
+        return True, "Voto BRANCO/NULO registrado com sucesso!"
+    return False, "Erro de conexão."
+
 def get_resultados():
     conn = get_connection()
     if conn:
@@ -131,15 +168,15 @@ elif menu == "Votar":
         if not eleicoes:
             st.info("Nenhuma eleição ativa.")
         else:
-            # Verifica se eleitor já votou em todas
+            # Verifica se eleitor já votou em qualquer eleição
             conn = get_connection()
             cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM votos_registro WHERE eleitor_id = %s", (st.session_state["eleitor_id"],))
-            qtd_votadas = cur.fetchone()[0]
+            cur.execute("SELECT id FROM votos_registro WHERE eleitor_id = %s", (st.session_state["eleitor_id"],))
+            ja_votou = cur.fetchone()
             cur.close()
 
-            if qtd_votadas == len(eleicoes):
-                st.success("✅ Você já votou em todas as eleições. Obrigado pela sua participação!")
+            if ja_votou:
+                st.success("✅ Você já votou. Obrigado pela participação!")
             else:
                 escolhas = {}
                 for eleicao_id, titulo, data_inicio in eleicoes:
@@ -159,7 +196,10 @@ elif menu == "Votar":
                     if escolhido:
                         escolhas[eleicao_id] = int(escolhido.split(" - ")[0])
 
-                if len(escolhas) == len(eleicoes):
+                # Botões lado a lado
+                col1, col2 = st.columns(2)
+
+                with col1:
                     if st.button("✅ Confirmar todos os votos"):
                         sucesso, msg = registrar_votos(st.session_state["eleitor_id"], escolhas)
                         if sucesso:
@@ -167,8 +207,15 @@ elif menu == "Votar":
                             st.rerun()
                         else:
                             st.error(msg)
-                else:
-                    st.info("Você precisa votar em todas as eleições antes de confirmar.")
+
+                with col2:
+                    if st.button("⚪ BRANCO/NULO"):
+                        sucesso, msg = registrar_branco_nulo(st.session_state["eleitor_id"], eleicoes)
+                        if sucesso:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
 
 # RESULTADOS
 elif menu == "Resultados":
@@ -201,7 +248,6 @@ elif menu == "Resultados":
             st.write(f"### {sub['Eleição'].iloc[0]}")
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
 
-
 # ------------------ RODAPÉ CENTRALIZADO ------------------
 st.markdown(
     f"""
@@ -221,9 +267,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-
-
-
-
-
