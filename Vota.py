@@ -95,7 +95,7 @@ menu = st.sidebar.radio("Navegação", ["Login", "Votar", "Resultados"])
 if menu == "Login":
     st.subheader("🔑 Login do Eleitor")
     nome = st.text_input("Nome completo")
-    crea = st.text_input("Número do CREA (apenas números)")
+    crea = st.text_input("Número do Conselho - APENAS NÚMEROS")
     email = st.text_input("Email (opcional)")
 
     if st.button("Entrar"):
@@ -221,6 +221,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
 
