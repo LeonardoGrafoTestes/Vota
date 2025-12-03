@@ -68,42 +68,16 @@ def registrar_votos(eleitor_id, escolhas):
         return True, "✅ Voto registrado com sucesso! Obrigado por participar."
     return False, "Erro de conexão."
 
-def registrar_branco_nulo(eleitor_id, eleicoes):
-    conn = get_connection()
-    if conn:
-        cur = conn.cursor()
-
-        # Verifica se já votou
-        cur.execute("SELECT id FROM votos_registro WHERE eleitor_id = %s", (eleitor_id,))
-        ja_votou = cur.fetchone()
-        if ja_votou:
-            cur.close()
-            return False, "Você já votou. Não é possível votar novamente."
-
-        # Para cada eleição, encontra o candidato BRANCO/NULO
-        for eleicao_id, titulo, data_inicio in eleicoes:
-            cur.execute("""
-                SELECT id FROM candidatos 
-                WHERE eleicao_id = %s AND nome ILIKE 'branco/nulo'
-            """, (eleicao_id,))
-            candidato = cur.fetchone()
-            if not candidato:
-                cur.close()
-                return False, f"A eleição '{titulo}' não possui candidato BRANCO/NULO cadastrado."
-            candidato_id = candidato[0]
-
-            # Insere voto
-            cur.execute("INSERT INTO votos (eleicao_id, candidato_id, datahora) VALUES (%s,%s,%s)",
-                        (eleicao_id, candidato_id, datetime.now()))
-
-        # Marca registro para bloquear novos votos
-        cur.execute("INSERT INTO votos_registro (eleitor_id, eleicao_id, datahora) VALUES (%s, -1, %s)",
-                    (eleitor_id, datetime.now()))
-
-        conn.commit()
-        cur.close()
-        return True, "Voto BRANCO/NULO registrado com sucesso!"
-    return False, "Erro de conexão."
+# Função para votar BRANCO/NULO
+def votar_branco_nulo(eleitor_id, eleicoes):
+    escolhas = {}
+    for eleicao_id, titulo, data_inicio in eleicoes:
+        candidatos = get_candidatos(eleicao_id)
+        candidato_bn = [c for c in candidatos if c[1].lower() == "branco/nulo"]
+        if not candidato_bn:
+            return False, f"A eleição '{titulo}' não possui candidato BRANCO/NULO."
+        escolhas[eleicao_id] = candidato_bn[0][0]  # id do candidato BRANCO/NULO
+    return registrar_votos(eleitor_id, escolhas)
 
 def get_resultados():
     conn = get_connection()
@@ -168,7 +142,7 @@ elif menu == "Votar":
         if not eleicoes:
             st.info("Nenhuma eleição ativa.")
         else:
-            # Verifica se eleitor já votou em qualquer eleição
+            # Verifica se eleitor já votou
             conn = get_connection()
             cur = conn.cursor()
             cur.execute("SELECT id FROM votos_registro WHERE eleitor_id = %s", (st.session_state["eleitor_id"],))
@@ -210,7 +184,7 @@ elif menu == "Votar":
 
                 with col2:
                     if st.button("⚪ BRANCO/NULO"):
-                        sucesso, msg = registrar_branco_nulo(st.session_state["eleitor_id"], eleicoes)
+                        sucesso, msg = votar_branco_nulo(st.session_state["eleitor_id"], eleicoes)
                         if sucesso:
                             st.success(msg)
                             st.rerun()
