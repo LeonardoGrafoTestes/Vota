@@ -68,16 +68,31 @@ def registrar_votos(eleitor_id, escolhas):
         return True, "✅ Voto registrado com sucesso! Obrigado por participar."
     return False, "Erro de conexão."
 
-# Função para votar BRANCO/NULO
-def votar_branco_nulo(eleitor_id, eleicoes):
-    escolhas = {}
-    for eleicao_id, titulo, data_inicio in eleicoes:
-        candidatos = get_candidatos(eleicao_id)
-        candidato_bn = [c for c in candidatos if c[1].lower() == "branco/nulo"]
-        if not candidato_bn:
-            return False, f"A eleição '{titulo}' não possui candidato BRANCO/NULO."
-        escolhas[eleicao_id] = candidato_bn[0][0]  # id do candidato BRANCO/NULO
-    return registrar_votos(eleitor_id, escolhas)
+def registrar_branco_nulo(eleitor_id, eleicoes):
+    conn = get_connection()
+    if conn:
+        cur = conn.cursor()
+        # verifica se já votou
+        cur.execute("SELECT COUNT(*) FROM votos_registro WHERE eleitor_id = %s", (eleitor_id,))
+        if cur.fetchone()[0] > 0:
+            cur.close()
+            return False, "Você já votou em alguma eleição."
+
+        for eleicao_id, titulo, _ in eleicoes:
+            # busca o candidato BRANCO/NULO
+            cur.execute("SELECT id FROM candidatos WHERE eleicao_id = %s AND nome = 'BRANCO/NULO'", (eleicao_id,))
+            candidato = cur.fetchone()
+            if candidato:
+                candidato_id = candidato[0]
+                cur.execute("INSERT INTO votos (eleicao_id, candidato_id, datahora) VALUES (%s,%s,%s)",
+                            (eleicao_id, candidato_id, datetime.now()))
+                cur.execute("INSERT INTO votos_registro (eleitor_id, eleicao_id, datahora) VALUES (%s,%s,%s)",
+                            (eleitor_id, eleicao_id, datetime.now()))
+
+        conn.commit()
+        cur.close()
+        return True, "✅ Voto em BRANCO/NULO registrado com sucesso em todas as eleições."
+    return False, "Erro de conexão."
 
 def get_resultados():
     conn = get_connection()
@@ -99,7 +114,6 @@ def get_resultados():
 
 # ------------------ INTERFACE ------------------
 st.title("🗳️ Sistema de Votação Online")
-
 menu = st.sidebar.radio("Navegação", ["Login", "Votar", "Resultados"])
 
 # LOGIN
@@ -142,49 +156,54 @@ elif menu == "Votar":
         if not eleicoes:
             st.info("Nenhuma eleição ativa.")
         else:
-            # Verifica se eleitor já votou
+            # Verifica se eleitor já votou em todas
             conn = get_connection()
             cur = conn.cursor()
-            cur.execute("SELECT id FROM votos_registro WHERE eleitor_id = %s", (st.session_state["eleitor_id"],))
-            ja_votou = cur.fetchone()
+            cur.execute("SELECT COUNT(*) FROM votos_registro WHERE eleitor_id = %s", (st.session_state["eleitor_id"],))
+            qtd_votadas = cur.fetchone()[0]
             cur.close()
 
-            if ja_votou:
-                st.success("✅ Você já votou. Obrigado pela participação!")
+            if qtd_votadas == len(eleicoes):
+                st.success("✅ Você já votou em todas as eleições. Obrigado pela sua participação!")
             else:
                 escolhas = {}
                 for eleicao_id, titulo, data_inicio in eleicoes:
                     st.write(f"### {titulo}")
                     candidatos = get_candidatos(eleicao_id)
 
-                    if not candidatos:
+                    # Oculta candidato BRANCO/NULO
+                    candidatos_visiveis = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
+
+                    if not candidatos_visiveis:
                         st.info("Nenhum candidato cadastrado.")
                         continue
 
                     escolhido = st.radio(
                         f"Escolha seu candidato para {titulo}:",
-                        [f"{c[0]} - {c[1]}" for c in candidatos],
+                        [f"{c[0]} - {c[1]}" for c in candidatos_visiveis],
                         key=f"eleicao_{eleicao_id}"
                     )
 
                     if escolhido:
                         escolhas[eleicao_id] = int(escolhido.split(" - ")[0])
 
-                # Botões lado a lado
+                # Botões de confirmação
                 col1, col2 = st.columns(2)
-
                 with col1:
-                    if st.button("✅ Confirmar todos os votos"):
-                        sucesso, msg = registrar_votos(st.session_state["eleitor_id"], escolhas)
-                        if sucesso:
-                            st.success(msg)
-                            st.rerun()
-                        else:
-                            st.error(msg)
+                    if len(escolhas) == len(eleicoes):
+                        if st.button("✅ Confirmar todos os votos"):
+                            sucesso, msg = registrar_votos(st.session_state["eleitor_id"], escolhas)
+                            if sucesso:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                    else:
+                        st.info("Você precisa votar em todas as eleições antes de confirmar.")
 
                 with col2:
-                    if st.button("⚪ BRANCO/NULO"):
-                        sucesso, msg = votar_branco_nulo(st.session_state["eleitor_id"], eleicoes)
+                    if st.button("✅ Confirmar BRANCO/NULO"):
+                        sucesso, msg = registrar_branco_nulo(st.session_state["eleitor_id"], eleicoes)
                         if sucesso:
                             st.success(msg)
                             st.rerun()
