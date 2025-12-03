@@ -4,8 +4,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # ------------------ CONFIGURAÇÕES ------------------
-MIN_VOTOS = 10          # mínimo de votos para mostrar o resultado
-TEMPO_ESPERA_MIN = 10  # minutos após o início para liberar resultado
+MIN_VOTOS = 2         # mínimo de votos para mostrar o resultado
+TEMPO_ESPERA_MIN = 0  # minutos após o início para liberar resultado
 
 # ------------------ CONEXÃO ------------------
 def get_connection():
@@ -220,4 +220,5 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
