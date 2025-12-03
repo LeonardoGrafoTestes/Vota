@@ -82,7 +82,6 @@ def registrar_branco_nulo(eleitor_id, eleicoes):
             return False, f"Você já votou nas eleições: {ja_votadas}"
 
         for eleicao_id, _, _ in eleicoes:
-            # Busca candidato BRANCO/NULO dessa eleição
             cur.execute("SELECT id FROM candidatos WHERE eleicao_id = %s AND UPPER(nome)='BRANCO/NULO'", (eleicao_id,))
             candidato_bn = cur.fetchone()
             if candidato_bn:
@@ -114,6 +113,38 @@ def get_resultados():
         cur.close()
         return rows
     return []
+
+# ==========================================================
+#              POP-UP CONFIRMAR TODOS OS VOTOS
+# ==========================================================
+@st.dialog("Confirmar votos")
+def popup_confirmar_votos(eleitor_id, escolhas):
+    st.write("Tem certeza que deseja **confirmar todos os votos**?")
+    st.write("Depois de confirmado, não será possível alterar.")
+
+    if st.button("✅ Confirmar agora"):
+        sucesso, msg = registrar_votos(eleitor_id, escolhas)
+        if sucesso:
+            st.success(msg)
+            st.rerun()
+        else:
+            st.error(msg)
+
+# ==========================================================
+#                POP-UP BRANCO / NULO
+# ==========================================================
+@st.dialog("Votar BRANCO/NULO")
+def popup_branco_nulo(eleitor_id, eleicoes):
+    st.write("Você está prestes a votar **BRANCO/NULO** em **todas as eleições**.")
+    st.write("Tem certeza que deseja continuar?")
+
+    if st.button("Confirmar voto BRANCO/NULO"):
+        sucesso, msg = registrar_branco_nulo(eleitor_id, eleicoes)
+        if sucesso:
+            st.success(msg)
+            st.rerun()
+        else:
+            st.error(msg)
 
 # ------------------ INTERFACE ------------------
 st.title("🗳️ Sistema de Votação Online")
@@ -173,7 +204,6 @@ elif menu == "Votar":
                     st.write(f"### {titulo}")
                     candidatos = get_candidatos(eleicao_id)
 
-                    # Oculta BRANCO/NULO
                     candidatos_visiveis = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
 
                     if not candidatos_visiveis:
@@ -193,22 +223,13 @@ elif menu == "Votar":
                 with col1:
                     if len(escolhas) == len(eleicoes):
                         if st.button("✅ Confirmar todos os votos"):
-                            sucesso, msg = registrar_votos(st.session_state["eleitor_id"], escolhas)
-                            if sucesso:
-                                st.success(msg)
-                                st.rerun()
-                            else:
-                                st.error(msg)
+                            popup_confirmar_votos(st.session_state["eleitor_id"], escolhas)
                     else:
                         st.info("Você precisa votar em todas as eleições antes de confirmar.")
+
                 with col2:
                     if st.button("✅ BRANCO/NULO"):
-                        sucesso, msg = registrar_branco_nulo(st.session_state["eleitor_id"], eleicoes)
-                        if sucesso:
-                            st.success(msg)
-                            st.rerun()
-                        else:
-                            st.error(msg)
+                        popup_branco_nulo(st.session_state["eleitor_id"], eleicoes)
 
 # RESULTADOS
 elif menu == "Resultados":
@@ -234,17 +255,13 @@ elif menu == "Resultados":
                 st.warning(f"⏳ Resultados da eleição **{sub['Eleição'].iloc[0]}** disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
                 continue
 
-            # Remove BRANCO/NULO da tabela
             sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
-
-            # Calcula % de votos
             sub["%"] = sub["Votos"] / total_votos * 100
             sub = sub.sort_values(by="Votos", ascending=False)
 
             st.write(f"### {sub['Eleição'].iloc[0]}")
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
 
-        # Total de eleitores que votaram BRANCO/NULO (uma vez por eleitor)
         total_branco_nulo = sum([r[4] for r in resultados if r[3].upper() == "BRANCO/NULO"])
         num_eleicoes = len(df["eleicao_id"].unique()) if len(df) > 0 else 1
         total_branco_nulo_por_eleitor = int(total_branco_nulo / num_eleicoes)
