@@ -93,7 +93,7 @@ def registrar_branco_nulo(eleitor_id, eleicoes):
 
         conn.commit()
         cur.close()
-        return True, "✅ Voto BRANCO/NULO registrado em todas as eleições."
+        return True, "🔲 Voto BRANCO/NULO registrado em todas as eleições."
     return False, "Erro de conexão."
 
 def get_resultados():
@@ -138,7 +138,7 @@ def popup_branco_nulo(eleitor_id, eleicoes):
     st.write("Você está prestes a votar **BRANCO/NULO** em **todas as eleições**.")
     st.write("Tem certeza que deseja continuar?")
 
-    if st.button("Confirmar voto BRANCO/NULO"):
+    if st.button("🔲 Confirmar voto BRANCO/NULO"):
         sucesso, msg = registrar_branco_nulo(eleitor_id, eleicoes)
         if sucesso:
             st.success(msg)
@@ -228,7 +228,7 @@ elif menu == "Votar":
                         st.info("Você precisa votar em todas as eleições antes de confirmar.")
 
                 with col2:
-                    if st.button("✅ BRANCO/NULO"):
+                    if st.button("🔲 BRANCO/NULO"):
                         popup_branco_nulo(st.session_state["eleitor_id"], eleicoes)
 
 # RESULTADOS
@@ -286,3 +286,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
