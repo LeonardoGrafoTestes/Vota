@@ -220,22 +220,8 @@ elif menu == "Resultados":
     else:
         df = pd.DataFrame(resultados, columns=["eleicao_id", "Eleição", "Data Início", "Candidato", "Votos"])
         
-        # Conexão para pegar votos BRANCO/NULO
-        conn = get_connection()
-        if conn:
-            cur = conn.cursor()
-            # Conta eleitores distintos que votaram em BRANCO/NULO
-            cur.execute("""
-                SELECT COUNT(DISTINCT vr.eleitor_id)
-                FROM votos v
-                JOIN candidatos c ON v.candidato_id = c.id
-                JOIN votos_registro vr ON v.eleicao_id = vr.eleicao_id AND vr.eleitor_id = v.eleitor_id
-                WHERE UPPER(c.nome) = 'BRANCO/NULO'
-            """)
-            branco_nulo_total = cur.fetchone()[0]
-            cur.close()
-        else:
-            branco_nulo_total = 0
+        # Calcula o total de votos BRANCO/NULO
+        branco_nulo_total = df[df["Candidato"].str.upper() == "BRANCO/NULO"]["Votos"].sum()
         
         # Remove BRANCO/NULO do dataframe para exibir nos resultados normais
         df = df[df["Candidato"].str.upper() != "BRANCO/NULO"]
@@ -261,8 +247,8 @@ elif menu == "Resultados":
             st.write(f"### {sub['Eleição'].iloc[0]}")
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
         
-        # Exibe o total de votos BRANCO/NULO (1 por eleitor)
-        st.markdown(f"### 📝 Total de eleitores que votaram BRANCO/NULO: {branco_nulo_total}")
+        # Exibe o total de votos BRANCO/NULO
+        st.markdown(f"### 📝 Total de votos BRANCO/NULO: {branco_nulo_total}")
 
 
 # ------------------ RODAPÉ CENTRALIZADO ------------------
@@ -284,4 +270,5 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
