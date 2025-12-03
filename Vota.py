@@ -77,6 +77,7 @@ def get_resultados():
             FROM eleicoes e
             JOIN candidatos c ON e.id = c.eleicao_id
             LEFT JOIN votos v ON c.id = v.candidato_id
+            WHERE e.ativa = true
             GROUP BY e.id, e.titulo, e.data_inicio, c.id, c.nome
             ORDER BY e.id, votos DESC
         """)
@@ -220,6 +221,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
 
