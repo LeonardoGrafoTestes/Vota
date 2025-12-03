@@ -219,6 +219,12 @@ elif menu == "Resultados":
         st.info("Nenhum resultado disponível.")
     else:
         df = pd.DataFrame(resultados, columns=["eleicao_id", "Eleição", "Data Início", "Candidato", "Votos"])
+        
+        # Calcula o total de votos BRANCO/NULO
+        branco_nulo_total = df[df["Candidato"].str.upper() == "BRANCO/NULO"]["Votos"].sum()
+        
+        # Remove BRANCO/NULO do dataframe para exibir nos resultados normais
+        df = df[df["Candidato"].str.upper() != "BRANCO/NULO"]
 
         agora = datetime.now()
         for eleicao_id in df["eleicao_id"].unique():
@@ -240,6 +246,10 @@ elif menu == "Resultados":
 
             st.write(f"### {sub['Eleição'].iloc[0]}")
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
+        
+        # Exibe o total de votos BRANCO/NULO
+        st.markdown(f"### 📝 Total de votos BRANCO/NULO: {branco_nulo_total}")
+
 
 # ------------------ RODAPÉ CENTRALIZADO ------------------
 st.markdown(
@@ -260,3 +270,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
