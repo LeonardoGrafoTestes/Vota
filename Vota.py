@@ -49,7 +49,7 @@ def registrar_votos(eleitor_id, escolhas):
     conn = get_connection()
     if conn:
         cur = conn.cursor()
-        # Verifica se já votou
+
         cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = ANY(%s)",
                     (eleitor_id, list(escolhas.keys())))
         ja_votadas = [row[0] for row in cur.fetchall()]
@@ -72,26 +72,26 @@ def registrar_branco_nulo(eleitor_id, eleicoes):
     conn = get_connection()
     if conn:
         cur = conn.cursor()
-        # Verifica se já votou
-        cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s", (eleitor_id,))
-        ja_votadas = [row[0] for row in cur.fetchall()]
-        if ja_votadas:
+        # verifica se já votou
+        cur.execute("SELECT COUNT(*) FROM votos_registro WHERE eleitor_id = %s", (eleitor_id,))
+        if cur.fetchone()[0] > 0:
             cur.close()
-            return False, f"Você já votou nas eleições."
+            return False, "Você já votou em alguma eleição."
 
-        # Para cada eleição, registra o candidato BRANCO/NULO
-        for eleicao_id, _, _ in eleicoes:
-            cur.execute("SELECT id FROM candidatos WHERE eleicao_id = %s AND UPPER(nome) = 'BRANCO/NULO'", (eleicao_id,))
-            cn = cur.fetchone()
-            if cn:
-                candidato_id = cn[0]
+        for eleicao_id, titulo, _ in eleicoes:
+            # busca o candidato BRANCO/NULO
+            cur.execute("SELECT id FROM candidatos WHERE eleicao_id = %s AND nome = 'BRANCO/NULO'", (eleicao_id,))
+            candidato = cur.fetchone()
+            if candidato:
+                candidato_id = candidato[0]
                 cur.execute("INSERT INTO votos (eleicao_id, candidato_id, datahora) VALUES (%s,%s,%s)",
                             (eleicao_id, candidato_id, datetime.now()))
                 cur.execute("INSERT INTO votos_registro (eleitor_id, eleicao_id, datahora) VALUES (%s,%s,%s)",
                             (eleitor_id, eleicao_id, datetime.now()))
+
         conn.commit()
         cur.close()
-        return True, "✅ Voto BRANCO/NULO registrado com sucesso!"
+        return True, "✅ Voto em BRANCO/NULO registrado com sucesso em todas as eleições."
     return False, "Erro de conexão."
 
 def get_resultados():
@@ -170,22 +170,24 @@ elif menu == "Votar":
                 for eleicao_id, titulo, data_inicio in eleicoes:
                     st.write(f"### {titulo}")
                     candidatos = get_candidatos(eleicao_id)
-                    # Remove BRANCO/NULO da lista de escolha
-                    candidatos = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
 
-                    if not candidatos:
+                    # Oculta candidato BRANCO/NULO
+                    candidatos_visiveis = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
+
+                    if not candidatos_visiveis:
                         st.info("Nenhum candidato cadastrado.")
                         continue
 
                     escolhido = st.radio(
                         f"Escolha seu candidato para {titulo}:",
-                        [f"{c[0]} - {c[1]}" for c in candidatos],
+                        [f"{c[0]} - {c[1]}" for c in candidatos_visiveis],
                         key=f"eleicao_{eleicao_id}"
                     )
 
                     if escolhido:
                         escolhas[eleicao_id] = int(escolhido.split(" - ")[0])
 
+                # Botões de confirmação
                 col1, col2 = st.columns(2)
                 with col1:
                     if len(escolhas) == len(eleicoes):
@@ -196,8 +198,11 @@ elif menu == "Votar":
                                 st.rerun()
                             else:
                                 st.error(msg)
+                    else:
+                        st.info("Você precisa votar em todas as eleições antes de confirmar.")
+
                 with col2:
-                    if st.button("✅ Confirmar todos os votos BRANCO/NULO"):
+                    if st.button("✅ Confirmar BRANCO/NULO"):
                         sucesso, msg = registrar_branco_nulo(st.session_state["eleitor_id"], eleicoes)
                         if sucesso:
                             st.success(msg)
@@ -215,23 +220,10 @@ elif menu == "Resultados":
     else:
         df = pd.DataFrame(resultados, columns=["eleicao_id", "Eleição", "Data Início", "Candidato", "Votos"])
         
-        # Conexão para contar eleitores distintos que votaram BRANCO/NULO
-        conn = get_connection()
-        if conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT COUNT(DISTINCT vr.eleitor_id)
-                FROM votos v
-                JOIN candidatos c ON v.candidato_id = c.id
-                JOIN votos_registro vr ON v.eleicao_id = vr.eleicao_id AND vr.eleitor_id = v.eleitor_id
-                WHERE UPPER(c.nome) = 'BRANCO/NULO'
-            """)
-            branco_nulo_total = cur.fetchone()[0]
-            cur.close()
-        else:
-            branco_nulo_total = 0
+        # Calcula o total de votos BRANCO/NULO
+        branco_nulo_total = df[df["Candidato"].str.upper() == "BRANCO/NULO"]["Votos"].sum()
         
-        # Remove BRANCO/NULO do dataframe principal
+        # Remove BRANCO/NULO do dataframe para exibir nos resultados normais
         df = df[df["Candidato"].str.upper() != "BRANCO/NULO"]
 
         agora = datetime.now()
@@ -255,8 +247,9 @@ elif menu == "Resultados":
             st.write(f"### {sub['Eleição'].iloc[0]}")
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
         
-        # Mostra o total de eleitores que votaram BRANCO/NULO
-        st.markdown(f"### 📝 Total de eleitores que votaram BRANCO/NULO: {branco_nulo_total}")
+        # Exibe o total de votos BRANCO/NULO
+        st.markdown(f"### 📝 Total de votos BRANCO/NULO: {branco_nulo_total}")
+
 
 # ------------------ RODAPÉ CENTRALIZADO ------------------
 st.markdown(
