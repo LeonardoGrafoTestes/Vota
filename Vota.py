@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # ------------------ CONFIGURAÇÕES ------------------
-MOSTRAR_BRANCO_NULO = 0   # 0 = esconder BRANCO/NULO | 1 = mostrar
+MOSTRAR_BRANCO_NULO = 1   # 0 = esconder BRANCO/NULO | 1 = mostrar
 MIN_VOTOS = 2             # mínimo de votos para mostrar o resultado
 TEMPO_ESPERA_MIN = 0      # minutos após o início para liberar resultado
 
@@ -36,11 +36,22 @@ def get_eleicoes():
         return rows
     return []
 
+def get_candidatos(eleicao_id):
+    conn = get_connection()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, nome FROM candidatos WHERE eleicao_id = %s", (eleicao_id,))
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+    return []
+
 def registrar_branco(eleitor_id, eleicoes):
     conn = get_connection()
     if conn:
         cur = conn.cursor()
 
+        # checar se já votou
         cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = ANY(%s)",
                     (eleitor_id, [e[0] for e in eleicoes]))
         ja_votadas = [row[0] for row in cur.fetchall()]
@@ -68,6 +79,7 @@ def registrar_nulo(eleitor_id, eleicoes):
     if conn:
         cur = conn.cursor()
 
+        # checar se já votou
         cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = ANY(%s)",
                     (eleitor_id, [e[0] for e in eleicoes]))
         ja_votadas = [row[0] for row in cur.fetchall()]
@@ -94,6 +106,8 @@ def registrar_votos(eleitor_id, escolhas):
     conn = get_connection()
     if conn:
         cur = conn.cursor()
+
+        # checar se já votou nessas eleições
         cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = ANY(%s)",
                     (eleitor_id, list(escolhas.keys())))
         ja_votadas = [row[0] for row in cur.fetchall()]
@@ -212,10 +226,19 @@ elif menu == "Votar":
             escolhas = {}
             for eleicao_id, titulo, _ in eleicoes:
                 st.write(f"### {titulo}")
-                cur_cands = get_connection().cursor()
-                cur_cands.execute("SELECT id, nome FROM candidatos WHERE eleicao_id=%s AND UPPER(nome) NOT IN ('BRANCO','NULO')", (eleicao_id,))
-                cand_rows = cur_cands.fetchall()
-                cur_cands.close()
+                cand_rows = get_candidatos(eleicao_id)
+
+                # ordenar no radio: reais → Branco → Nulo dependendo da flag
+                if MOSTRAR_BRANCO_NULO == 1:
+                    def classifica(nome):
+                        n = nome.upper().strip()
+                        if n == "BRANCO": return 2
+                        if n == "NULO": return 3
+                        return 1
+                    cand_rows = sorted(cand_rows, key=lambda x: classifica(x[1]))
+
+                else:  # MOSTRAR_BRANCO_NULO == 0
+                    cand_rows = [c for c in cand_rows if c[1].upper() not in ("BRANCO", "NULO")]
 
                 nomes = {c[1]: c[0] for c in cand_rows}
                 if not nomes:
@@ -234,13 +257,16 @@ elif menu == "Votar":
                 else:
                     st.info("Vote em todas antes de confirmar.")
 
+            # ⛔ Só mostrar botões separados quando A FLAG = 0 (comportamento original)
             with col2:
-                if st.button("🤍 Branco"):
-                    popup_confirmar_branco(st.session_state["eleitor_id"], eleicoes)
+                if MOSTRAR_BRANCO_NULO == 0:
+                    if st.button("🤍 Branco"):
+                        popup_confirmar_branco(st.session_state["eleitor_id"], eleicoes)
 
             with col3:
-                if st.button("🚫 Nulo"):
-                    popup_confirmar_nulo(st.session_state["eleitor_id"], eleicoes)
+                if MOSTRAR_BRANCO_NULO == 0:
+                    if st.button("🚫 Nulo"):
+                        popup_confirmar_nulo(st.session_state["eleitor_id"], eleicoes)
 
 # RESULTADOS
 elif menu == "Resultados":
@@ -259,22 +285,21 @@ elif menu == "Resultados":
             total_votos = sub["Votos"].sum()
 
             if total_votos < MIN_VOTOS:
-                st.warning(f"⚠️ Aguardando {MIN_VOTOS}+ votos para {sub['Eleição'].iloc[0]}")
+                st.warning(f"⚠️ Aguardando {MIN_VOTOS}+ votos para {sub['Eleição'].iloc[0]}.")
                 continue
 
             if agora < data_inicio + timedelta(minutes=TEMPO_ESPERA_MIN):
-                st.warning("⏳ Resultado ainda bloqueado por tempo.")
+                st.warning("⏳ Resultado ainda bloqueado.")
                 continue
 
-            # 🧠 classificar e ordenar
-            def classifica(nome):
-                n = nome.upper()
+            # 🔥 ordenar: candidatos reais → Branco → Nulo
+            def ordem_candidato(nome):
+                n = nome.upper().strip()
                 if n == "BRANCO": return 2
                 if n == "NULO": return 3
                 return 1
 
-            sub["ordem"] = sub["Candidato"].map(classifica)
-
+            sub["ordem"] = sub["Candidato"].map(ordem_candidato)
             sub = sub.sort_values(by=["ordem", "Votos"], ascending=[True, False])
             sub["%"] = sub["Votos"] / total_votos * 100
 
@@ -305,4 +330,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
