@@ -232,12 +232,12 @@ elif menu == "Votar":
                         st.info("Você precisa votar antes de confirmar.")
 
                 with col2:
-                    if st.button("🚫 BRANCO/NULO"):
-                        # 🔥 CORREÇÃO AQUI
-                        popup_branco_nulo(
-                            st.session_state["eleitor_id"],
-                            [(e[0], e[1], e[2]) for e in eleicoes]
-                        )
+                    if MOSTRAR_BRANCO_NULO == 0:  # SOMENTE NESTE CASO O BOTÃO APARECE
+                        if st.button("🚫 BRANCO/NULO"):
+                            popup_branco_nulo(
+                                st.session_state["eleitor_id"],
+                                [(e[0], e[1], e[2]) for e in eleicoes]
+                            )
 
 # RESULTADOS
 elif menu == "Resultados":
