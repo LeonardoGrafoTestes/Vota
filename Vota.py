@@ -204,7 +204,6 @@ elif menu == "Votar":
                     st.write(f"### {titulo}")
                     candidatos = get_candidatos(eleicao_id)
 
-                    # REMOVER BRANCO/NULO SE DESATIVADO
                     if MOSTRAR_BRANCO_NULO == 0:
                         candidatos = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
 
@@ -231,12 +230,15 @@ elif menu == "Votar":
                     else:
                         st.info("Você precisa votar antes de confirmar.")
 
+                # 🔥 Aqui está a única mudança que você pediu:
+                # botão escondido QUANDO MOSTRAR_BRANCO_NULO = 1
                 with col2:
-                    if st.button("🚫 BRANCO/NULO"):
-                        popup_branco_nulo(
-                            st.session_state["eleitor_id"],
-                            [(e[0], e[1], e[2]) for e in eleicoes]
-                        )
+                    if MOSTRAR_BRANCO_NULO == 0:
+                        if st.button("🚫 BRANCO/NULO"):
+                            popup_branco_nulo(
+                                st.session_state["eleitor_id"],
+                                [(e[0], e[1], e[2]) for e in eleicoes]
+                            )
 
 # RESULTADOS
 elif menu == "Resultados":
@@ -266,8 +268,6 @@ elif menu == "Resultados":
                 sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
 
             sub["%"] = sub["Votos"] / total_votos * 100
-
-            # 🔥 SEMPRE deixar BRANCO/NULO na última linha
             sub["is_branco_nulo"] = sub["Candidato"].str.upper() == "BRANCO/NULO"
 
             sub = sub.sort_values(
