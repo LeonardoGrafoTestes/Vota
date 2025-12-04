@@ -233,7 +233,11 @@ elif menu == "Votar":
 
                 with col2:
                     if st.button("🚫 BRANCO/NULO"):
-                        popup_branco_nulo(st.session_state["eleitor_id"], eleicoes)
+                        # 🔥 CORREÇÃO AQUI
+                        popup_branco_nulo(
+                            st.session_state["eleitor_id"],
+                            [(e[0], e[1], e[2]) for e in eleicoes]
+                        )
 
 # RESULTADOS
 elif menu == "Resultados":
@@ -251,17 +255,14 @@ elif menu == "Resultados":
             data_inicio = sub["Data Início"].iloc[0]
             total_votos = sub["Votos"].sum()
 
-            # Aguardar mínimo de votos
             if total_votos < MIN_VOTOS:
                 st.warning(f"⚠️ Aguardando pelo menos {MIN_VOTOS} votos para mostrar resultados da eleição **{sub['Eleição'].iloc[0]}**.")
                 continue
 
-            # Aguardar tempo mínimo
             if agora < data_inicio + timedelta(minutes=TEMPO_ESPERA_MIN):
-                st.warning(f"⏳ Resultados da eleição **{sub['Eleição'].iloc[0]}** disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
+                st.warning(f"⏳ Resultados disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
                 continue
 
-            # REMOVER BRANCO/NULO DOS RESULTADOS
             if MOSTRAR_BRANCO_NULO == 0:
                 sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
 
@@ -270,7 +271,6 @@ elif menu == "Resultados":
 
             st.write(f"### {sub['Eleição'].iloc[0]}")
 
-            # OCULTAR ÍNDICE
             tabela_formatada = sub[["Candidato", "Votos", "%"]].style \
                 .format({"%": "{:.1f}%"}).hide(axis="index")
 
@@ -280,7 +280,6 @@ elif menu == "Resultados":
                 hide_index=True
             )
 
-        # MOSTRAR INFORMAÇÃO SOBRE BRANCO/NULO
         if MOSTRAR_BRANCO_NULO == 0:
             total_branco_nulo = sum([r[4] for r in resultados if r[3].upper() == "BRANCO/NULO"])
             num_eleicoes = len(df["eleicao_id"].unique()) if len(df) > 0 else 1
@@ -309,4 +308,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
