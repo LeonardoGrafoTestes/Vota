@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # ------------------ CONFIGURAÇÕES ------------------
-MIN_VOTOS = 0         # mínimo de votos para mostrar o resultado
+MIN_VOTOS = 2         # mínimo de votos para mostrar o resultado
 TEMPO_ESPERA_MIN = 0  # minutos após o início para liberar resultado
 
 # ------------------ CONEXÃO ------------------
@@ -286,6 +286,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
 
