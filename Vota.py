@@ -114,9 +114,7 @@ def get_resultados():
         return rows
     return []
 
-# ==========================================================
-#              POP-UP CONFIRMAR TODOS OS VOTOS
-# ==========================================================
+# POP-UP CONFIRMAR TODOS OS VOTOS
 @st.dialog("Confirmar votos")
 def popup_confirmar_votos(eleitor_id, escolhas):
     st.write("Tem certeza que deseja **confirmar todos os votos**?")
@@ -130,9 +128,7 @@ def popup_confirmar_votos(eleitor_id, escolhas):
         else:
             st.error(msg)
 
-# ==========================================================
-#                POP-UP BRANCO / NULO
-# ==========================================================
+# POP-UP BRANCO/NULO
 @st.dialog("Votar BRANCO/NULO")
 def popup_branco_nulo(eleitor_id, eleicoes):
     st.write("Você está prestes a votar **BRANCO/NULO** nas **eleições**.")
@@ -146,7 +142,7 @@ def popup_branco_nulo(eleitor_id, eleicoes):
         else:
             st.error(msg)
 
-# ------------------ INTERFACE ------------------
+# INTERFACE
 st.title("🗳️ Sistema de Votação Online")
 menu = st.sidebar.radio("Navegação", ["Login", "Votar", "Resultados"])
 
@@ -231,7 +227,6 @@ elif menu == "Votar":
                     else:
                         st.info("Você precisa votar antes de confirmar.")
 
-                # 🔥 Botão BRANCO/NULO permanece SEMPRE visível (como você escolheu)
                 with col2:
                     if st.button("🚫 BRANCO/NULO"):
                         popup_branco_nulo(st.session_state["eleitor_id"], eleicoes)
@@ -270,12 +265,14 @@ elif menu == "Resultados":
             st.write(f"### {sub['Eleição'].iloc[0]}")
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
 
-        total_branco_nulo = sum([r[4] for r in resultados if r[3].upper() == "BRANCO/NULO"])
-        num_eleicoes = len(df["eleicao_id"].unique()) if len(df) > 0 else 1
-        total_branco_nulo_por_eleitor = int(total_branco_nulo / num_eleicoes)
-        st.markdown(f"### 📝 Total de eleitores que votaram BRANCO/NULO: {total_branco_nulo_por_eleitor}")
+        # 🔥 MOSTRA BRANCO/NULO APENAS QUANDO CONFIGURADO
+        if MOSTRAR_BRANCO_NULO == 1:
+            total_branco_nulo = sum([r[4] for r in resultados if r[3].upper() == "BRANCO/NULO"])
+            num_eleicoes = len(df["eleicao_id"].unique()) if len(df) > 0 else 1
+            total_branco_nulo_por_eleitor = int(total_branco_nulo / num_eleicoes)
+            st.markdown(f"### 📝 Total de eleitores que votaram BRANCO/NULO: {total_branco_nulo_por_eleitor}")
 
-# ------------------ RODAPÉ ------------------
+# RODAPÉ
 st.markdown(
     f"""
     <style>
@@ -294,4 +291,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
