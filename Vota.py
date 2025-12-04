@@ -2,6 +2,7 @@ import streamlit as st
 import psycopg2
 import pandas as pd
 from datetime import datetime, timedelta
+import re
 
 # ------------------ CONFIGURAÇÕES ------------------
 MOSTRAR_BRANCO_NULO = 1   # 0 = esconder BRANCO/NULO | 1 = mostrar
@@ -50,27 +51,15 @@ def get_eleicoes():
         return rows
     return []
 
-def get_candidatos(eleicao_id):
-    conn = get_connection()
-    if conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, nome FROM candidatos WHERE eleicao_id = %s", (eleicao_id,))
-        rows = cur.fetchall()
-        cur.close()
-        return rows
-    return []
-
 def registrar_votos(eleitor_id, escolhas):
     conn = get_connection()
     if conn:
         cur = conn.cursor()
-
         cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = ANY(%s)",
                     (eleitor_id, list(escolhas.keys())))
-        ja_votadas = [row[0] for row in cur.fetchall()]
-        if ja_votadas:
+        if cur.fetchall():
             cur.close()
-            return False, f"Você já votou nas eleições: {ja_votadas}"
+            return False, "Você já votou nessa eleição."
 
         for eleicao_id, candidato_id in escolhas.items():
             cur.execute("INSERT INTO votos (eleicao_id, candidato_id, datahora) VALUES (%s,%s,%s)",
@@ -87,13 +76,6 @@ def registrar_branco(eleitor_id, eleicoes):
     conn = get_connection()
     if conn:
         cur = conn.cursor()
-
-        cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = ANY(%s)",
-                    (eleitor_id, [e[0] for e in eleicoes]))
-        if cur.fetchall():
-            cur.close()
-            return False, "Você já votou nessas eleições."
-
         for eleicao_id, _, _ in eleicoes:
             cur.execute("SELECT id FROM candidatos WHERE eleicao_id = %s AND UPPER(nome)='BRANCO'", (eleicao_id,))
             bn = cur.fetchone()
@@ -112,13 +94,6 @@ def registrar_nulo(eleitor_id, eleicoes):
     conn = get_connection()
     if conn:
         cur = conn.cursor()
-
-        cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = ANY(%s)",
-                    (eleitor_id, [e[0] for e in eleicoes]))
-        if cur.fetchall():
-            cur.close()
-            return False, "Você já votou nessas eleições."
-
         for eleicao_id, _, _ in eleicoes:
             cur.execute("SELECT id FROM candidatos WHERE eleicao_id = %s AND UPPER(nome)='NULO'", (eleicao_id,))
             nu = cur.fetchone()
@@ -152,7 +127,7 @@ def get_resultados():
     return []
 
 # Pop-ups
-@st.dialog("Confirmar votos")
+@st.dialog("Confirmar Votos")
 def popup_confirmar_votos(eleitor_id, escolhas):
     if st.button("✅ Confirmar"):
         ok, msg = registrar_votos(eleitor_id, escolhas)
@@ -186,32 +161,70 @@ def popup_confirmar_nulo(eleitor_id, eleicoes):
 st.title("🗳️ Sistema de Votação Online")
 menu = st.sidebar.radio("Menu", ["Login", "Votar", "Resultados"])
 
-# Login
+# ==========================================================
+# LOGIN
+# ==========================================================
 if menu == "Login":
-    nome = st.text_input("Nome")
-    crea = st.text_input("CREA")
-    email = st.text_input("Email")
+    st.subheader("🔑 Login do Eleitor")
+
+    nome = st.text_input("Nome completo")
+    conselho = st.text_input("Número do Conselho (Apenas número)")  # ← novo nome do campo
+    email = st.text_input("Email (opcional)")
+
     if st.button("Entrar"):
+
+        # ---- VALIDAÇÃO NOME ----
+        if not nome:
+            st.error("O campo Nome é obrigatório.")
+            st.stop()
+
+        if re.search(r"\d", nome):
+            st.error("O nome não pode conter números.")
+            st.stop()
+
+        if len(nome.strip().split()) < 2:
+            st.error("Informe nome e sobrenome.")
+            st.stop()
+
+        # ---- VALIDAÇÃO NÚMERO DO CONSELHO ----
+        if not conselho:
+            st.error("O campo Número do Conselho é obrigatório.")
+            st.stop()
+
+        if not conselho.isdigit():
+            st.error("O Número do Conselho deve conter apenas números.")
+            st.stop()
+
+        # ---- LOGIN OU CADASTRO ----
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, nome FROM eleitores WHERE crea = %s", (crea,))
-        el = cur.fetchone()
-        if el:
-            st.session_state["eleitor_id"] = el[0]
-            st.session_state["nome"] = el[1]
+
+        # validar voto anterior pelo número do conselho
+        cur.execute("SELECT id, nome FROM eleitores WHERE crea = %s", (conselho,))
+        eleitor = cur.fetchone()
+
+        if eleitor:
+            st.session_state["eleitor_id"] = eleitor[0]
+            st.session_state["nome"] = eleitor[1]
         else:
-            cur.execute("INSERT INTO eleitores (nome, crea, email, data_cadastro) VALUES (%s,%s,%s,%s) RETURNING id",
-                        (nome, crea, email, datetime.now()))
-            st.session_state["eleitor_id"] = cur.fetchone()[0]
-            st.session_state["nome"] = nome
+            cur.execute(
+                "INSERT INTO eleitores (nome, crea, email, data_cadastro) VALUES (%s,%s,%s,%s) RETURNING id",
+                (nome, conselho, email if email else None, datetime.now())
+            )
+            novo_id = cur.fetchone()[0]
             conn.commit()
+            st.session_state["eleitor_id"] = novo_id
+            st.session_state["nome"] = nome
+
         cur.close()
         st.success(f"Bem-vindo(a), {st.session_state['nome']}!")
 
-# Votar
+# ==========================================================
+# VOTAR
+# ==========================================================
 elif menu == "Votar":
     if "eleitor_id" not in st.session_state:
-        st.warning("Faça login.")
+        st.warning("⚠️ Faça login primeiro!")
     else:
         eleitor_id = st.session_state["eleitor_id"]
 
@@ -219,13 +232,11 @@ elif menu == "Votar":
         if "mensagem_pos_voto" in st.session_state:
             st.success(st.session_state["mensagem_pos_voto"])
 
-        # Checar se já votou todas
         if ja_votou_todas(eleitor_id):
             st.success("✅ Você já votou em todas as eleições!")
-            st.info("Obrigado por participar!")
+            st.info("Obrigado pela sua participação!")
             st.stop()
 
-        # Ainda pode votar
         eleicoes = get_eleicoes()
         escolhas = {}
         conn = get_connection()
@@ -238,11 +249,9 @@ elif menu == "Votar":
             cand_rows = cur.fetchall()
             cur.close()
 
-            # Aplicar variável igual antes
             if MOSTRAR_BRANCO_NULO == 0:
-                cand_rows = [c for c in cand_rows if c[1].upper() not in ("BRANCO", "NULO")]
+                cand_rows = [c for c in cand_rows if c[1].upper().strip() not in ("BRANCO","NULO")]
 
-            # Ordenar nomes no radio se a flag = 1 (reais → Branco → Nulo)
             def ordem(nome):
                 n = nome.upper().strip()
                 if n == "BRANCO": return 2
@@ -253,10 +262,9 @@ elif menu == "Votar":
             nomes = {c[1]: c[0] for c in cand_rows}
 
             if nomes:
-                voto = st.radio("Escolha:", list(nomes.keys()), key=f"v_{eleicao_id}")
+                voto = st.radio("Escolha:", list(nomes.keys()), key=f"radio_{eleicao_id}")
                 escolhas[eleicao_id] = nomes[voto]
 
-        # Botões separados Branco e Nulo só aparecem se a flag = 0 (igual antes)
         col1, col2, col3 = st.columns(3)
 
         with col1:
@@ -274,37 +282,45 @@ elif menu == "Votar":
                 if st.button("🚫 Nulo"):
                     popup_confirmar_nulo(eleitor_id, eleicoes)
 
-# Resultados
+# ==========================================================
+# RESULTADOS
+# ==========================================================
 elif menu == "Resultados":
+    st.subheader("📊 Resultados")
+
     resultados = get_resultados()
-    df = pd.DataFrame(resultados, columns=["eleicao_id","Eleição","Data Início","Candidato","Votos"])
-    for eleicao_id in df["eleicao_id"].unique():
-        sub = df[df["eleicao_id"]==eleicao_id].copy()
-        total = sub["Votos"].sum()
+    if not resultados:
+        st.info("Nenhum resultado disponível.")
+    else:
+        df = pd.DataFrame(resultados, columns=["eleicao_id","Eleição","Data Início","Candidato","Votos"])
 
-        if total < MIN_VOTOS:
-            st.warning(f"⚠️ Aguardando {MIN_VOTOS} votos.")
-            continue
+        for eleicao_id in df["eleicao_id"].unique():
+            sub = df[df["eleicao_id"] == eleicao_id].copy()
+            total = sub["Votos"].sum()
+            data_inicio = sub["Data Início"].iloc[0]
 
-        if datetime.now() < sub["Data Início"].iloc[0] + timedelta(minutes=TEMPO_ESPERA_MIN):
-            st.warning("⏳ Resultado liberado depois do tempo de espera.")
-            continue
+            if total < MIN_VOTOS:
+                st.warning(f"⚠️ Resultados apenas com {MIN_VOTOS}+ votos.")
+                continue
 
-        # Ordenar resultados igual regra (reais por votos → Branco → Nulo)
-        sub["ordem"] = sub["Candidato"].map(lambda n: 2 if n.upper()=="BRANCO" else 3 if n.upper()=="NULO" else 1)
-        sub = sub.sort_values(by=["ordem","Votos"], ascending=[True, False])
-        sub["%"] = sub["Votos"]/total*100
+            if datetime.now() < data_inicio + timedelta(minutes=TEMPO_ESPERA_MIN):
+                st.warning("⏳ Aguardando tempo de liberação.")
+                continue
 
-        st.write(f"### {sub['Eleição'].iloc[0]}")
-        tab = sub[["Candidato","Votos","%"]].style.format({"%":"{:.1f}%"}).hide(axis="index")
-        st.dataframe(tab, use_container_width=True, hide_index=True)
+            sub["ordem"] = sub["Candidato"].map(lambda n: 2 if n.upper()=="BRANCO" else 3 if n.upper()=="NULO" else 1)
+            sub = sub.sort_values(by=["ordem","Votos"], ascending=[True, False])
+            sub["%"] = sub["Votos"] / total * 100
 
-# Rodapé
+            st.write(f"### {sub['Eleição'].iloc[0]}")
+            tabela = sub[["Candidato","Votos","%"]].style.format({"%":"{:.1f}%"}).hide(axis="index")
+            st.dataframe(tabela, use_container_width=True, hide_index=True)
+
+# ==========================================================
+# RODAPÉ
+# ==========================================================
 st.markdown(
     f"""
     <div style='position:fixed;bottom:10px;left:50%;transform:translate(-50%);color:#999;font-size:14px'>
     👨‍💻 Desenvolvido por <b>Leonardo Dutra</b> © {datetime.now().year}
     </div>
     """, unsafe_allow_html=True)
-
-
