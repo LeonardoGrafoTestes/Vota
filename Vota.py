@@ -71,25 +71,16 @@ if st.button("🚫 Votar BRANCO/NULO para todas"):
 # ------------------ LOOP DAS ELEIÇÕES ------------------
 for _, eleicao in eleicoes.iterrows():
     st.markdown(f"## 🗂️ {eleicao['titulo']}")
-
+    
     candidatos = buscar_candidatos(eleicao["id"])
 
-    # 🔹 Remove ID no início do nome (ex: "1 - Fulano")
-    candidatos["nome"] = candidatos["nome"].str.replace(r"^\d+\s*-\s*", "", regex=True)
-
-    # 🔹 Remove BRANCO/NULO dentro da eleição se estiver desativado
+    # Remove BRANCO/NULO da lista SE estiver desativado
     if MOSTRAR_BRANCO_NULO == 0:
         candidatos = candidatos[candidatos["nome"] != "BRANCO/NULO"]
 
-    # Lista final para o usuário
     opcoes = candidatos["nome"].tolist()
 
-    escolha = st.radio(
-        f"Escolha sua opção para {eleicao['titulo']}",
-        opcoes,
-        index=None,
-        key=f"radio_{eleicao['id']}"
-    )
+    escolha = st.radio(f"Escolha sua opção para {eleicao['titulo']}", opcoes, index=None, key=f"radio_{eleicao['id']}")
 
     if st.button(f"Confirmar voto em {eleicao['titulo']}", key=f"btn_{eleicao['id']}"):
         if escolha:
@@ -102,19 +93,16 @@ for _, eleicao in eleicoes.iterrows():
     st.markdown("### 📊 Resultado parcial")
     resultados = buscar_resultados(eleicao["id"])
 
-    # 🔹 Se não mostrar branco/nulo, remove do resultado
+    # Oculta frase de BRANCO/NULO APENAS quando MOSTRAR_BRANCO_NULO = 1
     if MOSTRAR_BRANCO_NULO == 0:
         resultados = resultados[resultados["nome_voto"] != "BRANCO/NULO"]
 
     st.dataframe(resultados)
 
-    # 🔹 Mostrar frase "Total de BRANCO/NULO" apenas quando permitido
+    # Frase total BRANCO/NULO (só aparece quando MOSTRAR_BRANCO_NULO = 0)
     if MOSTRAR_BRANCO_NULO == 0:
         total_bn = resultados[resultados["nome_voto"] == "BRANCO/NULO"]["votos"].sum()
         st.info(f"Total de eleitores que votaram BRANCO/NULO: **{total_bn}**")
 
 st.markdown("---")
-st.markdown(
-    "<div style='text-align:center;color:gray;font-size:14px;'>👨‍💻 Desenvolvido por <b>Leonardo Dutra</b></div>",
-    unsafe_allow_html=True
-)
+st.markdown("<div style='text-align:center;color:gray;font-size:14px;'>👨‍💻 Desenvolvido por <b>Leonardo Dutra</b></div>", unsafe_allow_html=True)
