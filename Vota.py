@@ -135,7 +135,7 @@ def popup_confirmar_votos(eleitor_id, escolhas):
 # ==========================================================
 @st.dialog("Votar BRANCO/NULO")
 def popup_branco_nulo(eleitor_id, eleicoes):
-    st.write("Você está prestes a votar **BRANCO/NULO** nas **eleições**.")
+    st.write("Você está prestes a votar **BRANCO/NULO** nas eleições.")
     st.write("Tem certeza que deseja continuar?")
 
     if st.button("🚫 Confirmar voto BRANCO/NULO"):
@@ -204,28 +204,25 @@ elif menu == "Votar":
                     st.write(f"### {titulo}")
                     candidatos = get_candidatos(eleicao_id)
 
-                    # 🔥 CONTROLE SE MOSTRA OU NÃO BRANCO/NULO NA VOTAÇÃO
-                    if MOSTRAR_BRANCO_NULO == 1:
-                        candidatos_visiveis = candidatos
-                    else:
-                        candidatos_visiveis = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
+                    # 🔥 REMOVER BRANCO/NULO SE DESATIVADO
+                    if MOSTRAR_BRANCO_NULO == 0:
+                        candidatos = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
 
-                    if not candidatos_visiveis:
+                    if not candidatos:
                         st.info("Nenhum candidato cadastrado.")
                         continue
 
-                    # 🔥 RADIO SEM NÚMERO APARECENDO
-                    opcoes = {c[0]: c[1] for c in candidatos_visiveis}
+                    # 🔥 **REMOVIDO O NÚMERO NO RADIO BUTTON**
+                    nomes_visiveis = {c[1]: c[0] for c in candidatos}
 
-                    escolhido = st.radio(
+                    escolhido_nome = st.radio(
                         f"Escolha seu candidato para {titulo}:",
-                        options=list(opcoes.keys()),
-                        format_func=lambda numero: opcoes[numero],
+                        list(nomes_visiveis.keys()),
                         key=f"eleicao_{eleicao_id}"
                     )
 
-                    if escolhido:
-                        escolhas[eleicao_id] = escolhido
+                    if escolhido_nome:
+                        escolhas[eleicao_id] = nomes_visiveis[escolhido_nome]
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -263,7 +260,7 @@ elif menu == "Resultados":
                 st.warning(f"⏳ Resultados da eleição **{sub['Eleição'].iloc[0]}** disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
                 continue
 
-            # 🔥 REMOVER BRANCO/NULO DA TABELA SE ESTÁ DESATIVADO
+            # 🔥 REMOVER BRANCO/NULO DOS RESULTADOS
             if MOSTRAR_BRANCO_NULO == 0:
                 sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
 
@@ -273,7 +270,7 @@ elif menu == "Resultados":
             st.write(f"### {sub['Eleição'].iloc[0]}")
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
 
-        # 🔥 FRASE FINAL: MOSTRAR SOMENTE QUANDO BRANCO/NULO NÃO É MOSTRADO NA VOTAÇÃO
+        # 🔥 MOSTRAR FRASE DO BRANCO/NULO SOMENTE QUANDO NÃO APARECE NOS RESULTADOS
         if MOSTRAR_BRANCO_NULO == 0:
             total_branco_nulo = sum([r[4] for r in resultados if r[3].upper() == "BRANCO/NULO"])
             num_eleicoes = len(df["eleicao_id"].unique()) if len(df) > 0 else 1
