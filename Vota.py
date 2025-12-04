@@ -214,14 +214,18 @@ elif menu == "Votar":
                         st.info("Nenhum candidato cadastrado.")
                         continue
 
+                    # 🔥 RADIO SEM NÚMERO APARECENDO
+                    opcoes = {c[0]: c[1] for c in candidatos_visiveis}
+
                     escolhido = st.radio(
                         f"Escolha seu candidato para {titulo}:",
-                        [f"{c[0]} - {c[1]}" for c in candidatos_visiveis],
+                        options=list(opcoes.keys()),
+                        format_func=lambda numero: opcoes[numero],
                         key=f"eleicao_{eleicao_id}"
                     )
 
                     if escolhido:
-                        escolhas[eleicao_id] = int(escolhido.split(" - ")[0])
+                        escolhas[eleicao_id] = escolhido
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -259,7 +263,7 @@ elif menu == "Resultados":
                 st.warning(f"⏳ Resultados da eleição **{sub['Eleição'].iloc[0]}** disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
                 continue
 
-            # 🔥 SE BRANCO/NULO ESTÁ DESATIVADO, REMOVER DA TABELA
+            # 🔥 REMOVER BRANCO/NULO DA TABELA SE ESTÁ DESATIVADO
             if MOSTRAR_BRANCO_NULO == 0:
                 sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
 
@@ -269,7 +273,7 @@ elif menu == "Resultados":
             st.write(f"### {sub['Eleição'].iloc[0]}")
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
 
-        # 🔥 MOSTRAR OU ESCONDER FRASE CONFORME SUA REGRA
+        # 🔥 FRASE FINAL: MOSTRAR SOMENTE QUANDO BRANCO/NULO NÃO É MOSTRADO NA VOTAÇÃO
         if MOSTRAR_BRANCO_NULO == 0:
             total_branco_nulo = sum([r[4] for r in resultados if r[3].upper() == "BRANCO/NULO"])
             num_eleicoes = len(df["eleicao_id"].unique()) if len(df) > 0 else 1
@@ -298,4 +302,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
