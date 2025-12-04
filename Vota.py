@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 
 # ------------------ CONFIGURAÇÕES ------------------
 MOSTRAR_BRANCO_NULO = 0   # 0 = esconder BRANCO/NULO | 1 = mostrar
-MIN_VOTOS = 2         # mínimo de votos para mostrar o resultado
-TEMPO_ESPERA_MIN = 0  # minutos após o início para liberar resultado
+MIN_VOTOS = 2             # mínimo de votos para mostrar o resultado
+TEMPO_ESPERA_MIN = 0      # minutos após o início para liberar resultado
 
 # ------------------ CONEXÃO ------------------
 def get_connection():
@@ -204,7 +204,7 @@ elif menu == "Votar":
                     st.write(f"### {titulo}")
                     candidatos = get_candidatos(eleicao_id)
 
-                    # 🔥 REMOVER BRANCO/NULO SE DESATIVADO
+                    # REMOVER BRANCO/NULO SE DESATIVADO
                     if MOSTRAR_BRANCO_NULO == 0:
                         candidatos = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
 
@@ -212,7 +212,6 @@ elif menu == "Votar":
                         st.info("Nenhum candidato cadastrado.")
                         continue
 
-                    # 🔥 **REMOVIDO O NÚMERO NO RADIO BUTTON**
                     nomes_visiveis = {c[1]: c[0] for c in candidatos}
 
                     escolhido_nome = st.radio(
@@ -252,15 +251,17 @@ elif menu == "Resultados":
             data_inicio = sub["Data Início"].iloc[0]
             total_votos = sub["Votos"].sum()
 
+            # Aguardar mínimo de votos
             if total_votos < MIN_VOTOS:
                 st.warning(f"⚠️ Aguardando pelo menos {MIN_VOTOS} votos para mostrar resultados da eleição **{sub['Eleição'].iloc[0]}**.")
                 continue
 
+            # Aguardar tempo mínimo
             if agora < data_inicio + timedelta(minutes=TEMPO_ESPERA_MIN):
                 st.warning(f"⏳ Resultados da eleição **{sub['Eleição'].iloc[0]}** disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
                 continue
 
-            # 🔥 REMOVER BRANCO/NULO DOS RESULTADOS
+            # REMOVER BRANCO/NULO DOS RESULTADOS
             if MOSTRAR_BRANCO_NULO == 0:
                 sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
 
@@ -268,10 +269,14 @@ elif menu == "Resultados":
             sub = sub.sort_values(by="Votos", ascending=False)
 
             st.write(f"### {sub['Eleição'].iloc[0]}")
-            st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}).hide(axis="index"))
 
+            # 🔥 OCULTAR O ÍNDICE DA TABELA (CORREÇÃO FINAL)
+            st.table(
+                sub[["Candidato", "Votos", "%"]]
+                    .style.format({"%": "{:.1f}%"}).hide(axis="index")
+            )
 
-        # 🔥 MOSTRAR FRASE DO BRANCO/NULO SOMENTE QUANDO NÃO APARECE NOS RESULTADOS
+        # MOSTRAR FRASE SOBRE BRANCO/NULO
         if MOSTRAR_BRANCO_NULO == 0:
             total_branco_nulo = sum([r[4] for r in resultados if r[3].upper() == "BRANCO/NULO"])
             num_eleicoes = len(df["eleicao_id"].unique()) if len(df) > 0 else 1
@@ -300,4 +305,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
