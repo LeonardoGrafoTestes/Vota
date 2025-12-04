@@ -268,7 +268,8 @@ elif menu == "Resultados":
             sub = sub.sort_values(by="Votos", ascending=False)
 
             st.write(f"### {sub['Eleição'].iloc[0]}")
-            st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
+            st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}).hide(axis="index"))
+
 
         # 🔥 MOSTRAR FRASE DO BRANCO/NULO SOMENTE QUANDO NÃO APARECE NOS RESULTADOS
         if MOSTRAR_BRANCO_NULO == 0:
@@ -299,3 +300,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
