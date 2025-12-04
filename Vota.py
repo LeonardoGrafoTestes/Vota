@@ -261,7 +261,7 @@ elif menu == "Votar":
 
         with col1:
             if len(escolhas) == len(eleicoes):
-                if st.button("✅ Confirmar todos"):
+                if st.button("✅ Confirmar"):
                     popup_confirmar_votos(eleitor_id, escolhas)
 
         with col2:
@@ -306,3 +306,4 @@ st.markdown(
     👨‍💻 Desenvolvido por <b>Leonardo Dutra</b> © {datetime.now().year}
     </div>
     """, unsafe_allow_html=True)
+
