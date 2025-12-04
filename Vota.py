@@ -256,7 +256,7 @@ elif menu == "Resultados":
                 continue
 
             # 🔥 REMOVE BRANCO/NULO APENAS SE CONFIGURADO
-            if MOSTRAR_BRANCO_NULO == 0:
+            if MOSTRAR_BRANCO_NULO == 1:
                 sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
 
             sub["%"] = sub["Votos"] / total_votos * 100
@@ -266,7 +266,7 @@ elif menu == "Resultados":
             st.table(sub[["Candidato", "Votos", "%"]].style.format({"%": "{:.1f}%"}))
 
         # 🔥 MOSTRA BRANCO/NULO APENAS QUANDO CONFIGURADO
-        if MOSTRAR_BRANCO_NULO == 1:
+        if MOSTRAR_BRANCO_NULO == 0:
             total_branco_nulo = sum([r[4] for r in resultados if r[3].upper() == "BRANCO/NULO"])
             num_eleicoes = len(df["eleicao_id"].unique()) if len(df) > 0 else 1
             total_branco_nulo_por_eleitor = int(total_branco_nulo / num_eleicoes)
@@ -291,3 +291,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
