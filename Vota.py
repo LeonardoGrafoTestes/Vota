@@ -204,7 +204,6 @@ elif menu == "Votar":
                     st.write(f"### {titulo}")
                     candidatos = get_candidatos(eleicao_id)
 
-                    # REMOVER BRANCO/NULO SE DESATIVADO
                     if MOSTRAR_BRANCO_NULO == 0:
                         candidatos = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
 
@@ -232,12 +231,11 @@ elif menu == "Votar":
                         st.info("Você precisa votar antes de confirmar.")
 
                 with col2:
-                    if MOSTRAR_BRANCO_NULO == 0:  # SOMENTE NESTE CASO O BOTÃO APARECE
-                        if st.button("🚫 BRANCO/NULO"):
-                            popup_branco_nulo(
-                                st.session_state["eleitor_id"],
-                                [(e[0], e[1], e[2]) for e in eleicoes]
-                            )
+                    if st.button("🚫 BRANCO/NULO"):
+                        popup_branco_nulo(
+                            st.session_state["eleitor_id"],
+                            [(e[0], e[1], e[2]) for e in eleicoes]
+                        )
 
 # RESULTADOS
 elif menu == "Resultados":
@@ -248,8 +246,8 @@ elif menu == "Resultados":
         st.info("Nenhum resultado disponível.")
     else:
         df = pd.DataFrame(resultados, columns=["eleicao_id", "Eleição", "Data Início", "Candidato", "Votos"])
-
         agora = datetime.now()
+
         for eleicao_id in df["eleicao_id"].unique():
             sub = df[df["eleicao_id"] == eleicao_id].copy()
             data_inicio = sub["Data Início"].iloc[0]
@@ -263,11 +261,14 @@ elif menu == "Resultados":
                 st.warning(f"⏳ Resultados disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
                 continue
 
-            if MOSTRAR_BRANCO_NULO == 0:
-                sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
+            # ➤ Forçar BRANCO/NULO a ficar na última linha
+            df_bn = sub[sub["Candidato"].str.upper() == "BRANCO/NULO"]
+            df_norm = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
+
+            df_norm = df_norm.sort_values(by="Votos", ascending=False)
+            sub = pd.concat([df_norm, df_bn])
 
             sub["%"] = sub["Votos"] / total_votos * 100
-            sub = sub.sort_values(by="Votos", ascending=False)
 
             st.write(f"### {sub['Eleição'].iloc[0]}")
 
