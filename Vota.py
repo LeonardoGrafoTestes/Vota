@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import re
 
 # ------------------ CONFIGURAÇÕES ------------------
-MOSTRAR_BRANCO_NULO = 1   # 0 = esconder BRANCO/NULO | 1 = mostrar
+MOSTRAR_BRANCO_NULO = 0   # 0 = esconder BRANCO/NULO | 1 = mostrar
 MIN_VOTOS = 2             # mínimo de votos para mostrar o resultado
 TEMPO_ESPERA_MIN = 0      # minutos após o início para liberar resultado
 
@@ -324,3 +324,4 @@ st.markdown(
     👨‍💻 Desenvolvido por <b>Leonardo Dutra</b> © {datetime.now().year}
     </div>
     """, unsafe_allow_html=True)
+
