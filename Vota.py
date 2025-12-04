@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # ------------------ CONFIGURAÇÕES ------------------
+MOSTRAR_BRANCO_NULO = 0   # 0 = esconder BRANCO/NULO | 1 = mostrar
 MIN_VOTOS = 2         # mínimo de votos para mostrar o resultado
 TEMPO_ESPERA_MIN = 0  # minutos após o início para liberar resultado
 
@@ -73,7 +74,6 @@ def registrar_branco_nulo(eleitor_id, eleicoes):
     if conn:
         cur = conn.cursor()
 
-        # Checa se já votou
         cur.execute("SELECT eleicao_id FROM votos_registro WHERE eleitor_id = %s AND eleicao_id = ANY(%s)",
                     (eleitor_id, [e[0] for e in eleicoes]))
         ja_votadas = [row[0] for row in cur.fetchall()]
@@ -204,7 +204,11 @@ elif menu == "Votar":
                     st.write(f"### {titulo}")
                     candidatos = get_candidatos(eleicao_id)
 
-                    candidatos_visiveis = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
+                    # 🔥 CONTROLE SE MOSTRA OU NÃO BRANCO/NULO
+                    if MOSTRAR_BRANCO_NULO == 1:
+                        candidatos_visiveis = candidatos
+                    else:
+                        candidatos_visiveis = [c for c in candidatos if c[1].upper() != "BRANCO/NULO"]
 
                     if not candidatos_visiveis:
                         st.info("Nenhum candidato cadastrado.")
@@ -227,6 +231,7 @@ elif menu == "Votar":
                     else:
                         st.info("Você precisa votar antes de confirmar.")
 
+                # 🔥 Botão BRANCO/NULO permanece SEMPRE visível (como você escolheu)
                 with col2:
                     if st.button("🚫 BRANCO/NULO"):
                         popup_branco_nulo(st.session_state["eleitor_id"], eleicoes)
@@ -255,7 +260,10 @@ elif menu == "Resultados":
                 st.warning(f"⏳ Resultados da eleição **{sub['Eleição'].iloc[0]}** disponíveis após {TEMPO_ESPERA_MIN} minutos do início.")
                 continue
 
-            sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
+            # 🔥 REMOVE BRANCO/NULO APENAS SE CONFIGURADO
+            if MOSTRAR_BRANCO_NULO == 0:
+                sub = sub[sub["Candidato"].str.upper() != "BRANCO/NULO"]
+
             sub["%"] = sub["Votos"] / total_votos * 100
             sub = sub.sort_values(by="Votos", ascending=False)
 
@@ -267,7 +275,7 @@ elif menu == "Resultados":
         total_branco_nulo_por_eleitor = int(total_branco_nulo / num_eleicoes)
         st.markdown(f"### 📝 Total de eleitores que votaram BRANCO/NULO: {total_branco_nulo_por_eleitor}")
 
-# ------------------ RODAPÉ CENTRALIZADO ------------------
+# ------------------ RODAPÉ ------------------
 st.markdown(
     f"""
     <style>
@@ -286,7 +294,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-
-
-
