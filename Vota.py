@@ -270,13 +270,17 @@ elif menu == "Resultados":
 
             st.write(f"### {sub['Eleição'].iloc[0]}")
 
-            # 🔥 OCULTAR O ÍNDICE DA TABELA (CORREÇÃO FINAL)
-            st.table(
-                sub[["Candidato", "Votos", "%"]]
-                    .style.format({"%": "{:.1f}%"}).hide(axis="index")
+            # OCULTAR ÍNDICE
+            tabela_formatada = sub[["Candidato", "Votos", "%"]].style \
+                .format({"%": "{:.1f}%"}).hide(axis="index")
+
+            st.dataframe(
+                tabela_formatada,
+                use_container_width=True,
+                hide_index=True
             )
 
-        # MOSTRAR FRASE SOBRE BRANCO/NULO
+        # MOSTRAR INFORMAÇÃO SOBRE BRANCO/NULO
         if MOSTRAR_BRANCO_NULO == 0:
             total_branco_nulo = sum([r[4] for r in resultados if r[3].upper() == "BRANCO/NULO"])
             num_eleicoes = len(df["eleicao_id"].unique()) if len(df) > 0 else 1
