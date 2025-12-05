@@ -87,7 +87,7 @@ def registrar_branco(eleitor_id, eleicoes):
 
         conn.commit()
         cur.close()
-        return True, "🤍 Voto BRANCO registrado!"
+        return True, "⬜ Voto BRANCO registrado!"
     return False, "Erro de conexão."
 
 def registrar_nulo(eleitor_id, eleicoes):
@@ -139,7 +139,7 @@ def popup_confirmar_votos(eleitor_id, escolhas):
 
 @st.dialog("Confirmar voto Branco")
 def popup_confirmar_branco(eleitor_id, eleicoes):
-    if st.button("🤍 Confirmar Branco"):
+    if st.button("⬜ Confirmar Branco"):
         ok, msg = registrar_branco(eleitor_id, eleicoes)
         if ok:
             st.session_state["mensagem_pos_voto"] = "✅ Você já votou em todas as eleições!"
@@ -274,7 +274,7 @@ elif menu == "Votar":
 
         with col2:
             if MOSTRAR_BRANCO_NULO == 0:
-                if st.button("🤍 Branco"):
+                if st.button("⬜ Branco"):
                     popup_confirmar_branco(eleitor_id, eleicoes)
 
         with col3:
@@ -324,4 +324,5 @@ st.markdown(
     👨‍💻 Desenvolvido por <b>Leonardo Dutra</b> © {datetime.now().year}
     </div>
     """, unsafe_allow_html=True)
+
 
